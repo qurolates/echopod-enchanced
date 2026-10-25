@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct Glyph {
@@ -22,9 +23,11 @@ typedef struct Font {
 } Font;
 
 enum {
-    FONT_FALLBACK_CODEPOINT = '?'
+    FONT_FALLBACK_CODEPOINT = '?',
+    FONT_CJK_FALLBACK_CODEPOINT = 0x25A1
 };
 
+bool font_is_cjk(uint32_t codepoint);
 const Glyph *font_find_glyph(const Font *font, uint32_t codepoint);
 uint8_t font_glyph_level(const Font *font, const Glyph *glyph, int x, int y);
 int font_line_height(const Font *font);

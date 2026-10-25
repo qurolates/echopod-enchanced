@@ -12,12 +12,12 @@
     },
     {
       "name": "device",
-      "displayName": "Device firmware (Cortex-M3, Release -O2)",
+      "displayName": "Device firmware (Cortex-M3, Release -Os)",
       "binaryDir": "${sourceDir}/build/device",
       "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_FLAGS_RELEASE": "-O2",
+        "CMAKE_C_FLAGS_RELEASE": "-Os",
         "ECHO_BUILD_SIM": "OFF",
         "ECHO_BUILD_TESTS": "OFF",
         "ECHO_BUILD_DEVICE": "ON"
@@ -29,6 +29,7 @@
       "inherits": "device",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
+        "CMAKE_C_FLAGS_RELEASE": "-Os",
         "ECHO_RELEASE": "ON"
       }
     }

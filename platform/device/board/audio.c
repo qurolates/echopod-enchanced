@@ -11,7 +11,9 @@
 #include "device/dac_sequence.h"
 #include "device/dma_loop.h"
 #include "device/flac_source.h"
+#include "device/aac_probe.h"
 #include "device/mp3_probe.h"
+#include "device/opus_probe.h"
 #include "device/wav_source.h"
 #include "dmac.h"
 #include "hal/audio.h"
@@ -34,13 +36,15 @@ enum {
     TONE_AMPLITUDE = 9000,
     MILLISECONDS_PER_SECOND = 1000,
     JACK_POLL_MS = 10,
-    SNIFF_BYTES = 12
+    SNIFF_BYTES = 36
 };
 
 typedef enum SourceKind {
     SOURCE_FLAC,
     SOURCE_WAV,
     SOURCE_MP3,
+    SOURCE_AAC,
+    SOURCE_OPUS,
     SOURCE_UNKNOWN
 } SourceKind;
 
@@ -155,7 +159,13 @@ static SourceKind kind_of(const char *path)
     if (tag_is(magic, "RIFF") && tag_is(magic + 8, "WAVE")) {
         return SOURCE_WAV;
     }
-    return mp3_signature(magic) ? SOURCE_MP3 : SOURCE_UNKNOWN;
+    if (mp3_signature(magic)) {
+        return SOURCE_MP3;
+    }
+    if (opus_signature(magic, sizeof magic)) {
+        return SOURCE_OPUS;
+    }
+    return aac_signature(magic, sizeof magic) ? SOURCE_AAC : SOURCE_UNKNOWN;
 }
 
 static AudioSource chosen_source(void)
@@ -165,6 +175,12 @@ static AudioSource chosen_source(void)
     }
     if (source_kind == SOURCE_MP3) {
         return core1_source_mp3_interface(&core1_source);
+    }
+    if (source_kind == SOURCE_AAC) {
+        return core1_source_aac_interface(&core1_source);
+    }
+    if (source_kind == SOURCE_OPUS) {
+        return core1_source_opus_interface(&core1_source);
     }
     return using_core1 ? core1_source_interface(&core1_source)
                        : flac_source_interface(&software_source);
@@ -199,6 +215,18 @@ static bool open_chosen(void *context, const char *path, uint32_t start_ms, Audi
     }
     if (source_kind == SOURCE_MP3) {
         using_core1 = board_core1_start_stream(CORE1_PROGRAM_MP3);
+        if (!using_core1) {
+            return false;
+        }
+    }
+    if (source_kind == SOURCE_AAC) {
+        using_core1 = board_core1_start_stream(CORE1_PROGRAM_AAC);
+        if (!using_core1) {
+            return false;
+        }
+    }
+    if (source_kind == SOURCE_OPUS) {
+        using_core1 = board_core1_start_stream(CORE1_PROGRAM_OPUS);
         if (!using_core1) {
             return false;
         }
@@ -490,6 +518,10 @@ static HalAudioCodec codec_of(AudioCodec codec)
         return HAL_AUDIO_CODEC_WAV;
     case AUDIO_CODEC_MP3:
         return HAL_AUDIO_CODEC_MP3;
+    case AUDIO_CODEC_AAC:
+        return HAL_AUDIO_CODEC_AAC;
+    case AUDIO_CODEC_OPUS:
+        return HAL_AUDIO_CODEC_OPUS;
     case AUDIO_CODEC_FLAC:
         break;
     }

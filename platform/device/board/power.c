@@ -1,5 +1,6 @@
 #include "hal/power.h"
 #include "board.h"
+#include "device/boot_power.h"
 #include "gpio.h"
 #include "registers.h"
 #include "usb.h"
@@ -73,6 +74,19 @@ void board_power_cut(void)
 bool board_power_key_down(void)
 {
     return gpio_read(POWER_KEY);
+}
+
+bool board_power_check_boot_hold(uint32_t hold_ms)
+{
+    BootPower boot;
+    boot_power_init(&boot, hold_ms, usb_vbus_present());
+    while (!boot_power_confirmed(&boot)) {
+        if (!boot_power_update(&boot, board_power_key_down(), 10)) {
+            return false;
+        }
+        board_delay_ms(10);
+    }
+    return true;
 }
 
 void hal_power_off(void)

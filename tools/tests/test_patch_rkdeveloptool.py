@@ -23,9 +23,9 @@ SCAN = (
 
 def make_tree(directory):
     root = Path(directory)
-    (root / "RKComm.h").write_text(COMM_HEADER, newline="\n")
-    (root / "main.cpp").write_text(MAIN, newline="\n")
-    (root / "RKScan.cpp").write_text(SCAN, newline="\n")
+    (root / "RKComm.h").write_bytes(COMM_HEADER.encode("utf-8"))
+    (root / "main.cpp").write_bytes(MAIN.encode("utf-8"))
+    (root / "RKScan.cpp").write_bytes(SCAN.encode("utf-8"))
     return root
 
 
@@ -67,7 +67,7 @@ class PatchTest(unittest.TestCase):
     def test_an_unexpected_source_is_refused_without_changing_anything(self):
         with tempfile.TemporaryDirectory() as directory:
             root = make_tree(directory)
-            (root / "main.cpp").write_text("#define DEFAULT_RW_LBA 64\n", newline="\n")
+            (root / "main.cpp").write_bytes(b"#define DEFAULT_RW_LBA 64\n")
             with self.assertRaises(patch_rkdeveloptool.PatchError):
                 patch_rkdeveloptool.patch(root)
             self.assertEqual(COMM_HEADER, (root / "RKComm.h").read_text())

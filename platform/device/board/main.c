@@ -3,6 +3,7 @@
 #include "app/app.h"
 #include "board.h"
 #include "device/battery_gauge.h"
+#include "device/boot_power.h"
 #include "hal/clock.h"
 #include "hal/power.h"
 #include "hal/system.h"
@@ -126,6 +127,9 @@ void board_main(void)
     board_bluetooth_off();
     board_clock_record_boot();
     board_clock_start();
+    if (!board_power_check_boot_hold(BOOT_POWER_HOLD_MS)) {
+        board_power_cut();
+    }
     board_stall_pause(true);
     hal_system_set_clock_mhz(START_CLOCK_MHZ);
     board_watchdog_start();

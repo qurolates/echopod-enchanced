@@ -2,10 +2,14 @@
 
 #include <stddef.h>
 
+#include "device/aac_probe.h"
 #include "device/mp3_probe.h"
+#include "device/opus_decoder.h"
+#include "device/opus_probe.h"
 
 enum {
     MP3_OUTPUT_BITS = 24,
+    AAC_OUTPUT_BITS = 24,
     MILLISECONDS_PER_SECOND = 1000
 };
 
@@ -392,4 +396,112 @@ static bool open_mp3(void *context, const char *path, uint32_t start_ms, AudioTr
 AudioSource core1_source_mp3_interface(Core1Source *source)
 {
     return (AudioSource){open_mp3, next_frame, release_frame, close_stream, source};
+}
+
+static bool open_aac(void *context, const char *path, uint32_t start_ms, AudioTrackInfo *track)
+{
+    Core1Source *source = context;
+    stop_streaming(source);
+    FlacFileOpener files = source->flac.files;
+    if (!files.open(files.context, path, &source->input)) {
+        return false;
+    }
+    source->file_open = true;
+    AacStream aac;
+    if (!aac_probe(source->input, &aac)) {
+        stop_streaming(source);
+        return false;
+    }
+    uint32_t target = (uint32_t)((uint64_t)start_ms * aac.sample_rate / MILLISECONDS_PER_SECOND);
+    target = target < aac.total_samples ? target : aac.total_samples;
+    uint32_t actual = target;
+    source->start_offset = aac_seek_offset(source->input, &aac, target, &actual);
+    source->end_offset = aac.audio_end;
+    source->written = source->start_offset;
+    source->slot = 0;
+    source->read_failed = false;
+    source->bits_per_sample = AAC_OUTPUT_BITS;
+    source->channels = aac.channels;
+    *track = (AudioTrackInfo){.stream = {.sample_rate = aac.sample_rate,
+                                         .channels = aac.channels,
+                                         .bits_per_sample = 0,
+                                         .min_block = aac.samples_per_frame,
+                                         .max_block = aac.samples_per_frame,
+                                         .total_samples = aac.total_samples},
+                              .audio_bytes = aac.audio_end - aac.audio_start,
+                              .codec = AUDIO_CODEC_AAC};
+    volatile StreamControl *control = source->region.control;
+    control->sample_rate = aac.sample_rate;
+    control->channels = aac.channels;
+    control->bits_per_sample = AAC_OUTPUT_BITS;
+    control->min_block = aac.samples_per_frame;
+    control->max_block = aac.samples_per_frame;
+    control->total_samples = aac.total_samples;
+    control->first_sample = actual;
+    control->start_offset = source->start_offset;
+    control->end_offset = source->end_offset;
+    control->written = source->written;
+    publish();
+    control->generation = next_generation(source);
+    source->streaming = true;
+    return true;
+}
+
+AudioSource core1_source_aac_interface(Core1Source *source)
+{
+    return (AudioSource){open_aac, next_frame, release_frame, close_stream, source};
+}
+
+static bool open_opus(void *context, const char *path, uint32_t start_ms, AudioTrackInfo *track)
+{
+    Core1Source *source = context;
+    stop_streaming(source);
+    FlacFileOpener files = source->flac.files;
+    if (!files.open(files.context, path, &source->input)) {
+        return false;
+    }
+    source->file_open = true;
+    OpusStream opus;
+    if (!opus_probe(source->input, &opus)) {
+        stop_streaming(source);
+        return false;
+    }
+    uint32_t target = (uint32_t)((uint64_t)start_ms * opus.sample_rate / MILLISECONDS_PER_SECOND);
+    target = target < opus.total_samples ? target : opus.total_samples;
+    uint32_t actual = target;
+    source->start_offset = opus_seek_offset(source->input, &opus, target, &actual);
+    source->end_offset = opus.audio_end;
+    source->written = source->start_offset;
+    source->slot = 0;
+    source->read_failed = false;
+    source->bits_per_sample = OPUS_OUTPUT_BITS;
+    source->channels = opus.channels;
+    *track = (AudioTrackInfo){.stream = {.sample_rate = opus.sample_rate,
+                                         .channels = opus.channels,
+                                         .bits_per_sample = 0,
+                                         .min_block = OPUS_MAX_FRAME_SAMPLES,
+                                         .max_block = OPUS_MAX_FRAME_SAMPLES,
+                                         .total_samples = opus.total_samples},
+                              .audio_bytes = opus.audio_end - opus.audio_start,
+                              .codec = AUDIO_CODEC_OPUS};
+    volatile StreamControl *control = source->region.control;
+    control->sample_rate = opus.sample_rate;
+    control->channels = opus.channels;
+    control->bits_per_sample = OPUS_OUTPUT_BITS;
+    control->min_block = OPUS_MAX_FRAME_SAMPLES;
+    control->max_block = OPUS_MAX_FRAME_SAMPLES;
+    control->total_samples = opus.total_samples;
+    control->first_sample = actual;
+    control->start_offset = source->start_offset;
+    control->end_offset = source->end_offset;
+    control->written = source->written;
+    publish();
+    control->generation = next_generation(source);
+    source->streaming = true;
+    return true;
+}
+
+AudioSource core1_source_opus_interface(Core1Source *source)
+{
+    return (AudioSource){open_opus, next_frame, release_frame, close_stream, source};
 }

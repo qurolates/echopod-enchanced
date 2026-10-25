@@ -34,6 +34,12 @@ static SimCodec codec_for(const char *path)
     if (has_extension(path, ".wav")) {
         return SIM_CODEC_WAV;
     }
+    if (has_extension(path, ".aac") || has_extension(path, ".m4a")) {
+        return SIM_CODEC_AAC;
+    }
+    if (has_extension(path, ".opus")) {
+        return SIM_CODEC_OPUS;
+    }
     return SIM_CODEC_NONE;
 }
 
@@ -83,6 +89,160 @@ static bool open_wav(SimDecoder *decoder, const char *path)
     return true;
 }
 
+static bool sim_read_aac_file(void *context, uint32_t offset, void *destination, uint32_t length)
+{
+    FILE *file = context;
+    if (fseek(file, (long)offset, SEEK_SET) != 0) {
+        return false;
+    }
+    return fread(destination, 1, length, file) == length;
+}
+
+static bool open_aac(SimDecoder *decoder, const char *path)
+{
+    decoder->aac_file = fopen(path, "rb");
+    if (decoder->aac_file == NULL) {
+        return false;
+    }
+    uint64_t size = file_size(path);
+    FlacInput input = {
+        .read = sim_read_aac_file,
+        .context = decoder->aac_file,
+        .size = (uint32_t)size
+    };
+    if (!aac_probe(input, &decoder->aac_stream)) {
+        fclose(decoder->aac_file);
+        decoder->aac_file = NULL;
+        return false;
+    }
+    FlacInput stream_input = {
+        .read = sim_read_aac_file,
+        .context = decoder->aac_file,
+        .size = decoder->aac_stream.audio_end
+    };
+    aac_decoder_start(&decoder->aac, stream_input, decoder->aac_stream.is_mp4,
+                      decoder->aac_stream.channels, decoder->aac_stream.sample_rate);
+    if (decoder->aac_stream.is_mp4) {
+        decoder->aac.buffer_start = decoder->aac_stream.audio_start;
+        decoder->aac.buffered = 0;
+        decoder->aac.consumed_in_buffer = 0;
+    }
+    decoder->aac_buffered = 0;
+    decoder->aac_offset = 0;
+    decoder->sample_rate = decoder->aac_stream.sample_rate;
+    decoder->channels = decoder->aac_stream.channels;
+    decoder->bits_per_sample = 16;
+    decoder->audio_bytes = decoder->aac_stream.audio_end - decoder->aac_stream.audio_start;
+    decoder->total_frames = decoder->aac_stream.total_samples;
+    return true;
+}
+
+static uint64_t read_aac_frames(SimDecoder *decoder, uint64_t count)
+{
+    uint64_t produced = 0;
+    uint32_t channels = decoder->channels;
+    while (produced < count) {
+        if (decoder->aac_offset >= decoder->aac_buffered) {
+            AacResult res = aac_decode(&decoder->aac);
+            if (res != AAC_DECODED) {
+                break;
+            }
+            decoder->aac_buffered = aac_decoder_samples(&decoder->aac);
+            decoder->aac_offset = 0;
+            if (decoder->aac_buffered == 0) {
+                break;
+            }
+        }
+        uint32_t available = decoder->aac_buffered - decoder->aac_offset;
+        uint32_t chunk = (uint32_t)(count - produced);
+        uint32_t take = chunk < available ? chunk : available;
+        const int32_t *left = aac_decoder_channel(&decoder->aac, 0);
+        const int32_t *right = aac_decoder_channel(&decoder->aac, 1);
+        for (uint32_t i = 0; i < take; i++) {
+            uint32_t sample_idx = decoder->aac_offset + i;
+            uint64_t out_idx = (produced + i) * channels;
+            native_samples[out_idx] = (float)left[sample_idx] / 8388608.0f;
+            if (channels > 1) {
+                native_samples[out_idx + 1] = (float)right[sample_idx] / 8388608.0f;
+            }
+        }
+        decoder->aac_offset += take;
+        produced += take;
+    }
+    return produced;
+}
+
+static bool sim_read_opus_file(void *context, uint32_t offset, void *destination, uint32_t length)
+{
+    FILE *file = context;
+    if (file == NULL || fseek(file, (long)offset, SEEK_SET) != 0) {
+        return false;
+    }
+    return fread(destination, 1, length, file) == length;
+}
+
+static bool open_opus(SimDecoder *decoder, const char *path)
+{
+    decoder->opus_file = fopen(path, "rb");
+    if (decoder->opus_file == NULL) {
+        return false;
+    }
+    uint64_t size = file_size(path);
+    FlacInput input = {
+        .read = sim_read_opus_file,
+        .context = decoder->opus_file,
+        .size = (uint32_t)size
+    };
+    if (!opus_probe(input, &decoder->opus_stream)) {
+        fclose(decoder->opus_file);
+        decoder->opus_file = NULL;
+        return false;
+    }
+    FlacInput stream_input = {
+        .read = sim_read_opus_file,
+        .context = decoder->opus_file,
+        .size = decoder->opus_stream.audio_end
+    };
+    opus_decoder_start(&decoder->opus, stream_input, decoder->opus_stream.channels,
+                       decoder->opus_stream.sample_rate);
+    decoder->sample_rate = decoder->opus_stream.sample_rate;
+    decoder->channels = decoder->opus_stream.channels;
+    decoder->bits_per_sample = 16;
+    decoder->audio_bytes = decoder->opus_stream.audio_end - decoder->opus_stream.audio_start;
+    decoder->total_frames = decoder->opus_stream.total_samples;
+    return true;
+}
+
+static uint64_t read_opus_frames(SimDecoder *decoder, uint64_t count)
+{
+    uint64_t produced = 0;
+    uint32_t channels = decoder->channels;
+    while (produced < count) {
+        OpusResult res = opus_decoder_step(&decoder->opus);
+        if (res != OPUS_DECODED) {
+            break;
+        }
+        uint32_t take = opus_decoder_samples(&decoder->opus);
+        if (take == 0) {
+            break;
+        }
+        if (produced + take > count) {
+            take = (uint32_t)(count - produced);
+        }
+        const int32_t *left = opus_decoder_channel(&decoder->opus, 0);
+        const int32_t *right = opus_decoder_channel(&decoder->opus, 1);
+        for (uint32_t i = 0; i < take; i++) {
+            uint64_t out_idx = (produced + i) * channels;
+            native_samples[out_idx] = (float)left[i] / 32768.0f;
+            if (channels > 1) {
+                native_samples[out_idx + 1] = (float)right[i] / 32768.0f;
+            }
+        }
+        produced += take;
+    }
+    return produced;
+}
+
 static bool open_codec(SimDecoder *decoder, const char *path)
 {
     switch (decoder->codec) {
@@ -92,6 +252,10 @@ static bool open_codec(SimDecoder *decoder, const char *path)
         return open_mp3(decoder, path);
     case SIM_CODEC_WAV:
         return open_wav(decoder, path);
+    case SIM_CODEC_AAC:
+        return open_aac(decoder, path);
+    case SIM_CODEC_OPUS:
+        return open_opus(decoder, path);
     case SIM_CODEC_NONE:
         return false;
     }
@@ -123,6 +287,10 @@ static uint64_t read_native(SimDecoder *decoder, uint64_t count)
         return drmp3_read_pcm_frames_f32(&decoder->mp3, count, native_samples);
     case SIM_CODEC_WAV:
         return drwav_read_pcm_frames_f32(&decoder->wav, count, native_samples);
+    case SIM_CODEC_AAC:
+        return read_aac_frames(decoder, count);
+    case SIM_CODEC_OPUS:
+        return read_opus_frames(decoder, count);
     case SIM_CODEC_NONE:
         return 0;
     }
@@ -156,6 +324,44 @@ bool sim_decoder_seek(SimDecoder *decoder, uint64_t frame)
     case SIM_CODEC_WAV:
         sought = drwav_seek_to_pcm_frame(&decoder->wav, frame);
         break;
+    case SIM_CODEC_AAC: {
+        FlacInput stream_input = {
+            .read = sim_read_aac_file,
+            .context = decoder->aac_file,
+            .size = decoder->aac_stream.audio_end
+        };
+        uint32_t actual = (uint32_t)frame;
+        uint32_t offset =
+            aac_seek_offset(stream_input, &decoder->aac_stream, (uint32_t)frame, &actual);
+        aac_decoder_start(&decoder->aac, stream_input, decoder->aac_stream.is_mp4,
+                          decoder->aac_stream.channels, decoder->aac_stream.sample_rate);
+        decoder->aac.buffer_start = offset;
+        decoder->aac.buffered = 0;
+        decoder->aac.consumed_in_buffer = 0;
+        decoder->aac_buffered = 0;
+        decoder->aac_offset = 0;
+        decoder->frame = actual;
+        sought = true;
+        break;
+    }
+    case SIM_CODEC_OPUS: {
+        FlacInput stream_input = {
+            .read = sim_read_opus_file,
+            .context = decoder->opus_file,
+            .size = decoder->opus_stream.audio_end
+        };
+        uint32_t actual = (uint32_t)frame;
+        uint32_t offset =
+            opus_seek_offset(stream_input, &decoder->opus_stream, (uint32_t)frame, &actual);
+        opus_decoder_start(&decoder->opus, stream_input, decoder->opus_stream.channels,
+                           decoder->opus_stream.sample_rate);
+        decoder->opus.buffer_start = offset;
+        decoder->opus.buffered = 0;
+        decoder->opus.consumed_in_buffer = 0;
+        decoder->frame = actual;
+        sought = true;
+        break;
+    }
     case SIM_CODEC_NONE:
         break;
     }
@@ -178,6 +384,18 @@ void sim_decoder_close(SimDecoder *decoder)
     case SIM_CODEC_WAV:
         drwav_uninit(&decoder->wav);
         break;
+    case SIM_CODEC_AAC:
+        if (decoder->aac_file != NULL) {
+            fclose(decoder->aac_file);
+            decoder->aac_file = NULL;
+        }
+        break;
+    case SIM_CODEC_OPUS:
+        if (decoder->opus_file != NULL) {
+            fclose(decoder->opus_file);
+            decoder->opus_file = NULL;
+        }
+        break;
     case SIM_CODEC_NONE:
         break;
     }
@@ -193,6 +411,10 @@ static HalAudioCodec hal_codec(SimCodec codec)
         return HAL_AUDIO_CODEC_MP3;
     case SIM_CODEC_WAV:
         return HAL_AUDIO_CODEC_WAV;
+    case SIM_CODEC_AAC:
+        return HAL_AUDIO_CODEC_AAC;
+    case SIM_CODEC_OPUS:
+        return HAL_AUDIO_CODEC_OPUS;
     case SIM_CODEC_NONE:
         return HAL_AUDIO_CODEC_UNKNOWN;
     }

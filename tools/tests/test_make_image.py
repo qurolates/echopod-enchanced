@@ -492,3 +492,29 @@ class Core1ModuleTest(unittest.TestCase):
     def test_no_program_leaves_the_space_empty(self):
         offset = make_image.CORE1_MP3_OFFSET
         self.assertEqual(bytes(16), build()[offset:offset + 16])
+
+    def test_the_aac_program_has_its_own_slot_after_the_flac_one(self):
+        program = bytes(range(100)) * 4
+        image = build(core1_aac=program)
+        offset = make_image.CORE1_AAC_OFFSET
+        self.assertGreaterEqual(offset, make_image.CORE1_FLAC_OFFSET +
+                                make_image.CORE1_MODULE_HEADER_SIZE +
+                                make_image.CORE1_MODULE_CAPACITY)
+        self.assertEqual(b"EC1M", image[offset:offset + 4])
+        self.assertEqual(len(program), word(image, offset + 4))
+        start = offset + make_image.CORE1_MODULE_HEADER_SIZE
+        self.assertEqual(program, image[start:start + len(program)])
+        self.assertEqual([], make_image.validate_image(image))
+
+    def test_the_opus_program_has_its_own_slot_after_the_aac_one(self):
+        program = bytes(range(100)) * 4
+        image = build(core1_opus=program)
+        offset = make_image.CORE1_OPUS_OFFSET
+        self.assertGreaterEqual(offset, make_image.CORE1_AAC_OFFSET +
+                                make_image.CORE1_MODULE_HEADER_SIZE +
+                                make_image.CORE1_MODULE_CAPACITY)
+        self.assertEqual(b"EC1M", image[offset:offset + 4])
+        self.assertEqual(len(program), word(image, offset + 4))
+        start = offset + make_image.CORE1_MODULE_HEADER_SIZE
+        self.assertEqual(program, image[start:start + len(program)])
+        self.assertEqual([], make_image.validate_image(image))

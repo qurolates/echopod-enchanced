@@ -343,24 +343,38 @@ bool tags_read_ogg(TagReader *reader)
     OggPage first;
     uint8_t identification[16];
     if (!read_page(reader, 0, &first) || first.body_length < sizeof identification ||
-        !tag_read(reader, first.header_length, identification, sizeof identification) ||
-        identification[0] != 1 || !tag_same_text((const char *)identification + 1, 6, "vorbis")) {
+        !tag_read(reader, first.header_length, identification, sizeof identification)) {
         return false;
     }
-    uint32_t rate = tag_le32(identification + 12);
+    bool is_vorbis = identification[0] == 1 && tag_same_text((const char *)identification + 1, 6, "vorbis");
+    bool is_opus = tag_same_text((const char *)identification, 8, "OpusHead");
+    if (!is_vorbis && !is_opus) {
+        return false;
+    }
+    uint32_t rate = is_opus ? 48000 : tag_le32(identification + 12);
+    uint16_t pre_skip = is_opus ? tag_le16(identification + 10) : 0;
     OggStream stream = {.reader = reader, .page_start = 0};
     if (!read_page(reader, first.header_length + first.body_length, &stream.page)) {
         return false;
     }
     ByteSource source = {.read = read_stream_bytes, .context = &stream};
-    uint8_t prefix[VORBIS_PACKET_PREFIX];
-    if (source_read(source, 0, prefix, sizeof prefix) && prefix[0] == 3 &&
-        tag_same_text((const char *)prefix + 1, 6, "vorbis")) {
-        tags_read_vorbis_comment(reader, source, VORBIS_PACKET_PREFIX, UINT32_MAX);
+    if (is_vorbis) {
+        uint8_t prefix[VORBIS_PACKET_PREFIX];
+        if (source_read(source, 0, prefix, sizeof prefix) && prefix[0] == 3 &&
+            tag_same_text((const char *)prefix + 1, 6, "vorbis")) {
+            tags_read_vorbis_comment(reader, source, VORBIS_PACKET_PREFIX, UINT32_MAX);
+        }
+    } else {
+        uint8_t prefix[8];
+        if (source_read(source, 0, prefix, sizeof prefix) &&
+            tag_same_text((const char *)prefix, 8, "OpusTags")) {
+            tags_read_vorbis_comment(reader, source, 8, UINT32_MAX);
+        }
     }
     uint64_t granule = 0;
     if (rate > 0 && last_page_granule(reader, &granule) && granule != UINT64_MAX) {
-        tag_set_duration(reader, (double)granule / (double)rate);
+        uint64_t samples = granule > pre_skip ? granule - pre_skip : 0;
+        tag_set_duration(reader, (double)samples / (double)rate);
     }
     return true;
 }

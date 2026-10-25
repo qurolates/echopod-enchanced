@@ -2,7 +2,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
+#include "device/aac_decoder.h"
+#include "device/aac_probe.h"
+#include "device/opus_decoder.h"
+#include "device/opus_probe.h"
 #include "dr_flac.h"
 #include "dr_mp3.h"
 #include "dr_wav.h"
@@ -12,7 +17,9 @@ typedef enum SimCodec {
     SIM_CODEC_NONE,
     SIM_CODEC_FLAC,
     SIM_CODEC_MP3,
-    SIM_CODEC_WAV
+    SIM_CODEC_WAV,
+    SIM_CODEC_AAC,
+    SIM_CODEC_OPUS
 } SimCodec;
 
 typedef struct SimDecoder {
@@ -20,6 +27,14 @@ typedef struct SimDecoder {
     drflac *flac;
     drmp3 mp3;
     drwav wav;
+    AacDecoder aac;
+    FILE *aac_file;
+    AacStream aac_stream;
+    OpusDecoderContext opus;
+    FILE *opus_file;
+    OpusStream opus_stream;
+    uint32_t aac_buffered;
+    uint32_t aac_offset;
     uint32_t sample_rate;
     uint32_t channels;
     uint32_t bits_per_sample;

@@ -32,7 +32,7 @@ echo_add_unit_test(NAME test_strip_renderer SOURCES gfx/test_strip_renderer.c LI
 echo_add_unit_test(NAME test_frame_diff SOURCES gfx/test_frame_diff.c LIBRARIES echo_gfx)
 echo_add_unit_test(NAME test_font SOURCES gfx/test_font.c gfx/tiny_font.c LIBRARIES echo_gfx)
 echo_add_unit_test(NAME test_text SOURCES gfx/test_text.c gfx/tiny_font.c LIBRARIES echo_gfx)
-echo_add_unit_test(NAME test_fonts SOURCES fonts/test_fonts.c LIBRARIES echo_fonts)
+echo_add_unit_test(NAME test_fonts SOURCES fonts/test_fonts.c LIBRARIES echo_fonts echo_ui)
 
 add_library(echo_library_fixtures STATIC
     library/memory_source.c
@@ -181,7 +181,7 @@ echo_add_unit_test(NAME test_test_pattern_screen
     PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
 )
 
-foreach(device_test audio_math backlight battery_gauge watchdog panic_text stall_watch bt_module card_write core1_control start_record dac_sequence dma_loop flac_accel jack_sense key_ladder key_scanner msc panel pll sd_card tick_clock updater usb_device usb_fallback wav_source)
+foreach(device_test audio_math backlight battery_gauge boot_power watchdog panic_text stall_watch bt_module card_write core1_control start_record dac_sequence dma_loop flac_accel jack_sense key_ladder key_scanner msc panel pll sd_card tick_clock updater usb_device usb_fallback wav_source)
     echo_add_unit_test(NAME test_${device_test}
         SOURCES device/test_${device_test}.c
         LIBRARIES echo_device_logic
@@ -217,6 +217,26 @@ echo_add_unit_test(NAME test_mp3_decoder
     LIBRARIES echo_device_logic echo_libmad
 )
 target_compile_definitions(test_mp3_decoder PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+echo_add_unit_test(NAME test_aac_probe
+    SOURCES device/test_aac_probe.c
+    LIBRARIES echo_device_logic
+)
+target_compile_definitions(test_aac_probe PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+echo_add_unit_test(NAME test_aac_decoder
+    SOURCES device/test_aac_decoder.c
+    LIBRARIES echo_device_logic echo_helix_aac
+)
+target_compile_definitions(test_aac_decoder PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+echo_add_unit_test(NAME test_opus_probe
+    SOURCES device/test_opus_probe.c
+    LIBRARIES echo_device_logic
+)
+target_compile_definitions(test_opus_probe PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+echo_add_unit_test(NAME test_opus_decoder
+    SOURCES device/test_opus_decoder.c
+    LIBRARIES echo_device_logic echo_libopus
+)
+target_compile_definitions(test_opus_decoder PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 echo_add_unit_test(NAME test_core1_stream
     SOURCES device/test_core1_stream.c
     LIBRARIES echo_device_logic

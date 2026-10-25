@@ -3,7 +3,9 @@
 #include <string.h>
 
 #include "check.h"
+#include "device/core1_aac.h"
 #include "device/core1_mp3.h"
+#include "device/core1_opus.h"
 #include "device/core1_stream.h"
 #include "device/mp3_probe.h"
 
@@ -28,6 +30,10 @@ static Core1Flac core1_flac;
 static Mp3Decoder mp3_decoder;
 static Mp3Decoder reference_decoder;
 static Core1Mp3 core1_mp3;
+static AacDecoder aac_decoder;
+static Core1Aac core1_aac;
+static OpusDecoderContext opus_decoder;
+static Core1Opus core1_opus;
 static Core1Source source;
 static Core1Stream stream;
 static AudioSource interface;
@@ -39,6 +45,10 @@ static Fixture load(const char *name, const char *extension)
     char path[512];
     if (strncmp(name, "mp3/", 4) == 0) {
         snprintf(path, sizeof path, "%s/%s.mp3", ECHO_FIXTURE_DIR, name);
+    } else if (strncmp(name, "tags/", 5) == 0) {
+        snprintf(path, sizeof path, "%s/%s.m4a", ECHO_FIXTURE_DIR, name);
+    } else if (strncmp(name, "opus/", 5) == 0) {
+        snprintf(path, sizeof path, "%s/%s.opus", ECHO_FIXTURE_DIR, name);
     } else {
         snprintf(path, sizeof path, "%s/flac/%s.%s", ECHO_FIXTURE_DIR, name, extension);
     }
@@ -105,6 +115,34 @@ static void start_with(uint32_t ring_bytes, bool mp3)
 static void start(uint32_t ring_bytes)
 {
     start_with(ring_bytes, false);
+}
+
+static void start_with_aac(uint32_t ring_bytes)
+{
+    memset(&control, 0, sizeof control);
+    memset(ring, 0, sizeof ring);
+    close_count = 0;
+    StreamRegion region = {
+        .control = &control, .samples = samples, .ring = ring, .ring_bytes = ring_bytes};
+    core1_source_init(&source, region,
+                      (FlacFileOpener){.open = open_file, .close = close_file, .context = NULL},
+                      &core0_decoder, FILL_BUDGET);
+    core1_stream_init(&stream, region, core1_aac_decoder(&core1_aac, &aac_decoder, true));
+    interface = core1_source_aac_interface(&source);
+}
+
+static void start_with_opus(uint32_t ring_bytes)
+{
+    memset(&control, 0, sizeof control);
+    memset(ring, 0, sizeof ring);
+    close_count = 0;
+    StreamRegion region = {
+        .control = &control, .samples = samples, .ring = ring, .ring_bytes = ring_bytes};
+    core1_source_init(&source, region,
+                      (FlacFileOpener){.open = open_file, .close = close_file, .context = NULL},
+                      &core0_decoder, FILL_BUDGET);
+    core1_stream_init(&stream, region, core1_opus_decoder(&core1_opus, &opus_decoder));
+    interface = core1_source_opus_interface(&source);
 }
 
 static AudioFrameResult next_frame(AudioFrame *frame)
@@ -347,6 +385,78 @@ static void a_file_that_is_not_mp3_is_refused(void)
     CHECK_EQUAL(1, close_count);
 }
 
+static void an_m4a_streams_through_core_1_to_completion(void)
+{
+    start_with_aac(BIG_RING_BYTES);
+    AudioTrackInfo info;
+    CHECK(interface.open(interface.context, "tags/aac", 0, &info));
+    CHECK_EQUAL(AUDIO_CODEC_AAC, info.codec);
+    CHECK_EQUAL(44100u, info.stream.sample_rate);
+    AudioFrame frame;
+    AudioFrameResult result;
+    uint32_t count = 0;
+    while ((result = next_frame(&frame)) == AUDIO_FRAME_READY) {
+        CHECK_EQUAL(1024u, frame.samples);
+        count++;
+        interface.release(interface.context);
+    }
+    CHECK_EQUAL(AUDIO_FRAME_END, result);
+    CHECK(count >= 44);
+    interface.close(interface.context);
+    CHECK_EQUAL(1, close_count);
+}
+
+static void an_opus_streams_through_core_1_to_completion(void)
+{
+    start_with_opus(BIG_RING_BYTES);
+    AudioTrackInfo info;
+    CHECK(interface.open(interface.context, "opus/stereo", 0, &info));
+    CHECK_EQUAL(AUDIO_CODEC_OPUS, info.codec);
+    CHECK_EQUAL(48000u, info.stream.sample_rate);
+    AudioFrame frame;
+    AudioFrameResult result;
+    uint32_t count = 0;
+    while ((result = next_frame(&frame)) == AUDIO_FRAME_READY) {
+        CHECK(frame.samples > 0);
+        count++;
+        interface.release(interface.context);
+    }
+    CHECK_EQUAL(AUDIO_FRAME_END, result);
+    CHECK(count >= 40);
+    interface.close(interface.context);
+    CHECK_EQUAL(1, close_count);
+}
+
+static void transition_opus_aac_mp3_flac(void)
+{
+    AudioTrackInfo info;
+    AudioFrame frame;
+
+    start_with_opus(BIG_RING_BYTES);
+    CHECK(interface.open(interface.context, "opus/stereo", 0, &info));
+    CHECK_EQUAL(AUDIO_FRAME_READY, next_frame(&frame));
+    interface.release(interface.context);
+    interface.close(interface.context);
+
+    start_with_aac(BIG_RING_BYTES);
+    CHECK(interface.open(interface.context, "tags/aac", 0, &info));
+    CHECK_EQUAL(AUDIO_FRAME_READY, next_frame(&frame));
+    interface.release(interface.context);
+    interface.close(interface.context);
+
+    start_with(BIG_RING_BYTES, true);
+    CHECK(interface.open(interface.context, "mp3/cbr_128_44k_stereo_tagged", 0, &info));
+    CHECK_EQUAL(AUDIO_FRAME_READY, next_frame(&frame));
+    interface.release(interface.context);
+    interface.close(interface.context);
+
+    start_with(BIG_RING_BYTES, false);
+    CHECK(interface.open(interface.context, "fixed_16_mono", 0, &info));
+    CHECK_EQUAL(AUDIO_FRAME_READY, next_frame(&frame));
+    interface.release(interface.context);
+    interface.close(interface.context);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -362,6 +472,9 @@ int main(void)
         TEST_CASE(an_mp3_describes_its_stream),
         TEST_CASE(an_mp3_opened_part_way_starts_counting_from_there),
         TEST_CASE(a_file_that_is_not_mp3_is_refused),
+        TEST_CASE(an_m4a_streams_through_core_1_to_completion),
+        TEST_CASE(an_opus_streams_through_core_1_to_completion),
+        TEST_CASE(transition_opus_aac_mp3_flac),
     };
     int failures = test_run_all(cases, TEST_CASE_COUNT(cases));
     free(opened.bytes);

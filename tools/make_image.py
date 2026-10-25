@@ -23,6 +23,8 @@ OVERLAY_HEADER_SIZE = 16
 OVERLAY_MAGIC = b"EOVL"
 CORE1_MP3_OFFSET = 0x240000
 CORE1_FLAC_OFFSET = 0x280000
+CORE1_AAC_OFFSET = 0x2C0000
+CORE1_OPUS_OFFSET = 0x300000
 CORE1_MODULE_CAPACITY = 0x20000
 CORE1_MODULE_HEADER_SIZE = 512
 CORE1_MODULE_MAGIC = b"EC1M"
@@ -81,6 +83,8 @@ class ImageParts:
     overlay: bytes = b""
     core1_mp3: bytes = b""
     core1_flac: bytes = b""
+    core1_aac: bytes = b""
+    core1_opus: bytes = b""
 
 
 def crc_table():
@@ -172,6 +176,8 @@ def assemble(parts):
     place_overlay(image, parts)
     place_core1_module(image, parts.core1_mp3, CORE1_MP3_OFFSET)
     place_core1_module(image, parts.core1_flac, CORE1_FLAC_OFFSET)
+    place_core1_module(image, parts.core1_aac, CORE1_AAC_OFFSET)
+    place_core1_module(image, parts.core1_opus, CORE1_OPUS_OFFSET)
     end = fw_end(FW_SIZE)
     struct.pack_into("<I", image, end, crc32(image[:end]))
     return bytes(image)
@@ -270,7 +276,7 @@ def generated_header(version):
 
 
 def build_image(firmware, brand, build_tag, date, overlay=b"", core1_mp3=b"", core1_flac=b"",
-                version=DEFAULT_VERSION):
+                core1_aac=b"", core1_opus=b"", version=DEFAULT_VERSION):
     check_firmware(firmware)
     code_size, data_size = len(firmware.code), len(firmware.data)
     header = generated_header(version)
@@ -287,7 +293,9 @@ def build_image(firmware, brand, build_tag, date, overlay=b"", core1_mp3=b"", co
     rows += [(0, 0, 0, 0)] * (TABLE_CAPACITY - len(rows))
     return assemble(ImageParts(bytes(header), tuple(rows), payload, bytes(MARKER_SIZE), overlay,
                                core1_mp3,
-                               core1_flac))
+                               core1_flac,
+                               core1_aac,
+                               core1_opus))
 
 
 def validate_image(image):
@@ -417,6 +425,8 @@ def parse_arguments(argv):
     parser.add_argument("--overlay", type=Path, help="rescan overlay ELF linked at 0x0307A000")
     parser.add_argument("--core1-mp3", type=Path, help="core 1 MP3 program, a raw binary")
     parser.add_argument("--core1-flac", type=Path, help="core 1 FLAC program, a raw binary")
+    parser.add_argument("--core1-aac", type=Path, help="core 1 AAC program, a raw binary")
+    parser.add_argument("--core1-opus", type=Path, help="core 1 Opus program, a raw binary")
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -430,8 +440,10 @@ def main(argv=None):
         overlay = overlay_from_elf(arguments.overlay.read_bytes()) if arguments.overlay else b""
         core1_mp3 = arguments.core1_mp3.read_bytes() if arguments.core1_mp3 else b""
         core1_flac = arguments.core1_flac.read_bytes() if arguments.core1_flac else b""
+        core1_aac = arguments.core1_aac.read_bytes() if arguments.core1_aac else b""
+        core1_opus = arguments.core1_opus.read_bytes() if arguments.core1_opus else b""
         image = build_image(firmware, arguments.brand, build_tag, date, overlay, core1_mp3,
-                            core1_flac, arguments.version)
+                            core1_flac, core1_aac, core1_opus, arguments.version)
     except ImageError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -445,6 +457,8 @@ def main(argv=None):
           f"code {len(firmware.code):,} bytes, "
           f"overlay {len(overlay):,} bytes, core 1 MP3 {len(core1_mp3):,} bytes, "
           f"core 1 FLAC {len(core1_flac):,} bytes, "
+          f"core 1 AAC {len(core1_aac):,} bytes, "
+          f"core 1 Opus {len(core1_opus):,} bytes, "
           f".data {len(firmware.data)} bytes, .bss {firmware.bss_size:,} bytes, "
           f"crc {word(image, fw_end(FW_SIZE)):#010x}")
     return 0

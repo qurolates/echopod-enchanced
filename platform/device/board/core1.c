@@ -22,6 +22,8 @@ enum {
     SECTOR_BYTES = 512,
     MP3_PROGRAM_OFFSET = 0x240000,
     FLAC_PROGRAM_OFFSET = 0x280000,
+    AAC_PROGRAM_OFFSET = 0x2C0000,
+    OPUS_PROGRAM_OFFSET = 0x300000,
     PROGRAM_MAGIC = 0x4D314345,
     STAGING_SECTORS = STAGING_WORDS * WORD_BYTES / SECTOR_BYTES
 };
@@ -109,7 +111,14 @@ static Core1Result place_program(Core1Program program)
     if (hal_system_restart_pending() || !emmc_start(&info)) {
         return CORE1_NO_REPLY;
     }
-    uint32_t offset = program == CORE1_PROGRAM_MP3 ? MP3_PROGRAM_OFFSET : FLAC_PROGRAM_OFFSET;
+    uint32_t offset = FLAC_PROGRAM_OFFSET;
+    if (program == CORE1_PROGRAM_MP3) {
+        offset = MP3_PROGRAM_OFFSET;
+    } else if (program == CORE1_PROGRAM_AAC) {
+        offset = AAC_PROGRAM_OFFSET;
+    } else if (program == CORE1_PROGRAM_OPUS) {
+        offset = OPUS_PROGRAM_OFFSET;
+    }
     uint32_t header_sector = info.layout.slot_1 + offset / SECTOR_BYTES;
     if (!emmc_read(NULL, header_sector, 1, staging)) {
         return CORE1_NO_REPLY;

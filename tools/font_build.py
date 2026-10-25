@@ -79,6 +79,9 @@ def build_font(spec, ranges, assets_directory):
     font = load_font(path, spec["size"])
     ascent, descent = font.getmetrics()
     glyphs = [render_glyph(font, codepoint) for codepoint in covered_codepoints(path, ranges)]
+    cjk_box = next((glyph for glyph in glyphs if glyph.codepoint == 0x25A1), None)
+    if cjk_box is not None and not any(glyph.codepoint == 0x3000 for glyph in glyphs):
+        glyphs.append(empty_glyph(0x3000, cjk_box.advance))
     return FontData(spec["name"], ascent, descent, glyphs)
 
 

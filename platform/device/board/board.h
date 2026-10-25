@@ -38,7 +38,9 @@ const char *board_audio_current_path(void);
 const char *board_audio_last_path(void);
 typedef enum Core1Program {
     CORE1_PROGRAM_FLAC,
-    CORE1_PROGRAM_MP3
+    CORE1_PROGRAM_MP3,
+    CORE1_PROGRAM_AAC,
+    CORE1_PROGRAM_OPUS
 } Core1Program;
 
 bool board_core1_start_stream(Core1Program program);
@@ -53,6 +55,7 @@ bool board_usb_listening(void);
 void board_power_hold(void);
 void board_power_cut(void);
 bool board_power_key_down(void);
+bool board_power_check_boot_hold(uint32_t hold_ms);
 void board_panic_poll_power(uint32_t now_ms);
 void board_bluetooth_off(void);
 void board_start_record_boot(void);

@@ -10,7 +10,7 @@ target_compile_options(echo_sim_codecs PRIVATE -w)
 
 add_library(echo_sim_decoder STATIC sim_decoder.c)
 target_include_directories(echo_sim_decoder PUBLIC .)
-target_link_libraries(echo_sim_decoder PUBLIC echo_hal echo_sim_codecs PRIVATE echo_core echo_options)
+target_link_libraries(echo_sim_decoder PUBLIC echo_hal echo_sim_codecs echo_device_logic PRIVATE echo_core echo_options)
 
 add_library(echo_sim_storage STATIC sim_storage.c)
 target_include_directories(echo_sim_storage PUBLIC .)

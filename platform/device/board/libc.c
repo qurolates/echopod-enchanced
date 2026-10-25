@@ -45,3 +45,8 @@ int memcmp(const void *left, const void *right, size_t count)
     }
     return 0;
 }
+
+int abs(int value)
+{
+    return value < 0 ? -value : value;
+}

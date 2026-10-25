@@ -763,6 +763,35 @@ static void a_slightly_long_press_wakes_the_screen_without_switching_off(void)
     CHECK(fake_hal_display_on());
 }
 
+static void a_short_power_tap_does_not_interrupt_playback(void)
+{
+    start_app_with_library();
+    play_first_album_track();
+    CHECK_EQUAL(PLAYER_PLAYING, app_player_status().state);
+    CHECK(playing_path_is(HELLS_BELLS_PATH));
+    tap(KEY_POWER);
+    CHECK_EQUAL(0, fake_hal_power_off_count());
+    CHECK(!fake_hal_display_on());
+    CHECK_EQUAL(PLAYER_PLAYING, app_player_status().state);
+    CHECK(playing_path_is(HELLS_BELLS_PATH));
+    tap(KEY_POWER);
+    CHECK_EQUAL(0, fake_hal_power_off_count());
+    CHECK(fake_hal_display_on());
+    CHECK_EQUAL(PLAYER_PLAYING, app_player_status().state);
+    CHECK(playing_path_is(HELLS_BELLS_PATH));
+}
+
+static void releasing_power_before_two_seconds_cancels_shutdown(void)
+{
+    start_app_with_library();
+    play_first_album_track();
+    hold_for(KEY_POWER, 1500);
+    wait_ms(GOODBYE_MS);
+    CHECK_EQUAL(0, fake_hal_power_off_count());
+    CHECK_EQUAL(PLAYER_PLAYING, app_player_status().state);
+    CHECK(playing_path_is(HELLS_BELLS_PATH));
+}
+
 static void a_volume_hold_under_a_second_changes_the_volume(void)
 {
     start_app_with_library();
@@ -1794,6 +1823,8 @@ int main(void)
         TEST_CASE(holding_power_saves_and_turns_the_player_off),
         TEST_CASE(a_one_second_power_hold_only_turns_the_screen_off),
         TEST_CASE(a_slightly_long_press_wakes_the_screen_without_switching_off),
+        TEST_CASE(a_short_power_tap_does_not_interrupt_playback),
+        TEST_CASE(releasing_power_before_two_seconds_cancels_shutdown),
         TEST_CASE(a_volume_hold_under_a_second_changes_the_volume),
         TEST_CASE(keys_are_ignored_while_saying_goodbye),
         TEST_CASE(the_splash_ignores_keys_until_it_ends),

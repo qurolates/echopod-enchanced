@@ -110,3 +110,5 @@ void core1_source_init(Core1Source *source, StreamRegion region, FlacFileOpener 
 void core1_source_fill(Core1Source *source);
 AudioSource core1_source_interface(Core1Source *source);
 AudioSource core1_source_mp3_interface(Core1Source *source);
+AudioSource core1_source_aac_interface(Core1Source *source);
+AudioSource core1_source_opus_interface(Core1Source *source);
