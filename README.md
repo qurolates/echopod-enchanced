@@ -1,6 +1,6 @@
 # EchoPod Enhanced (`echopod-enchanced`)
 
-**EchoPod Enhanced** is a feature-extended fork of [EchoPod](https://github.com/basil-joy/echopod), the replacement firmware for the Snowsky (FiiO) Echo Mini portable music player (dual Cortex-M3 Rockchip RKnanoC).
+**EchoPod Enhanced** is a feature-extended fork of [EchoPod](https://github.com/BasilSkyWalk/echopod), the replacement firmware for the Snowsky (FiiO) Echo Mini portable music player (dual Cortex-M3 Rockchip RKnanoC).
 
 This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, full **Cyrillic and expanded CJK Unicode font coverage**, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
 
@@ -162,7 +162,7 @@ mkdir -p build/system
 
 ## Credits & License
 
-- **EchoPod Core & UI:** GPL-3.0-or-later. Original project created by [Basil Joy](https://github.com/basil-joy/echopod).
+- **EchoPod Core & UI:** GPL-3.0-or-later. Original project created by [Basil Joy](https://github.com/BasilSkyWalk/echopod).
 - **Reverse Engineering & Hardware Research:** Built upon findings from the [ReChord](https://github.com/brnomt/ReChord) project (`docs/hardware.md`, `CREDITS.md`).
 - **libopus:** BSD-3-Clause (Xiph.Org Foundation, Skype Technologies SA).
 - **Helix AAC Decoder:** RealNetworks Public Source License / BSD-compatible embedded profile.
