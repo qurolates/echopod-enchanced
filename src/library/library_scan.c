@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "library/playlist_reader.h"
+#include "library/track_cache.h"
 #include "library/track_fields.h"
 #include "library/track_tags.h"
 
@@ -15,7 +16,8 @@ enum {
     RESUME_BYTES = (2 + SCAN_NAME_CAPACITY + 3) & ~3,
     NO_RESUME = 0xFFFF,
     MINIMUM_BATCH = 2,
-    ENTRY_OVERHEAD = 8
+    ENTRY_OVERHEAD = 8,
+    RECORD_META_SIZE = 9
 };
 
 typedef struct Level {
@@ -45,6 +47,13 @@ typedef struct ScanState {
     char entry_text[PLAYLIST_ENTRY_CAPACITY];
     char playlist_name[SCAN_NAME_CAPACITY];
     char cutoff[SCAN_NAME_CAPACITY];
+    TrackCacheReader cache_reader;
+    TrackCacheWriter cache_writer;
+    bool has_cache;
+    bool has_writer;
+    char cache_text[2048];
+    TrackCacheIndexEntry *read_index;
+    TrackCacheIndexEntry *write_index;
 } ScanState;
 
 typedef struct Listing {
@@ -63,12 +72,29 @@ static uint32_t text_length(const char *text)
 
 static const char *entry_name(const ScanState *state, uint32_t offset)
 {
-    return (const char *)state->listing + offset + 1;
+    return (const char *)state->listing + offset + RECORD_META_SIZE;
 }
 
 static bool entry_is_directory(const ScanState *state, uint32_t offset)
 {
     return state->listing[offset] != 0;
+}
+
+static uint32_t entry_size(const ScanState *state, uint32_t offset)
+{
+    const uint8_t *p = state->listing + offset + 1;
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static uint32_t entry_modified(const ScanState *state, uint32_t offset)
+{
+    const uint8_t *p = state->listing + offset + 5;
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static uint32_t entry_record_length(const ScanState *state, uint32_t offset)
+{
+    return RECORD_META_SIZE + text_length(entry_name(state, offset)) + 1;
 }
 
 static int compare_texts(const char *left, const char *right)
@@ -121,15 +147,24 @@ static void sort_names(const ScanState *state, uint32_t *items, uint32_t *scratc
 static bool store_entry(ScanState *state, const ScanEntry *entry)
 {
     uint32_t length = text_length(entry->name);
-    if (length + 2 > state->playlist_floor - state->listing_used) {
+    uint32_t need = RECORD_META_SIZE + length + 1;
+    if (need > state->playlist_floor - state->listing_used) {
         return false;
     }
     uint8_t *record = state->listing + state->listing_used;
     record[0] = entry->directory ? 1 : 0;
+    record[1] = (uint8_t)entry->size;
+    record[2] = (uint8_t)(entry->size >> 8);
+    record[3] = (uint8_t)(entry->size >> 16);
+    record[4] = (uint8_t)(entry->size >> 24);
+    record[5] = (uint8_t)entry->modified;
+    record[6] = (uint8_t)(entry->modified >> 8);
+    record[7] = (uint8_t)(entry->modified >> 16);
+    record[8] = (uint8_t)(entry->modified >> 24);
     for (uint32_t index = 0; index <= length; index++) {
-        record[1 + index] = (uint8_t)entry->name[index];
+        record[RECORD_META_SIZE + index] = (uint8_t)entry->name[index];
     }
-    state->listing_used += length + 2;
+    state->listing_used += need;
     return true;
 }
 
@@ -145,7 +180,7 @@ static uint32_t *sorted_offsets(ScanState *state, uint32_t start, uint32_t count
     uint32_t cursor = start;
     for (uint32_t index = 0; index < count; index++) {
         offsets[index] = cursor;
-        cursor += 2 + text_length(entry_name(state, cursor));
+        cursor += entry_record_length(state, cursor);
     }
     sort_names(state, offsets, offsets + count, count);
     return offsets;
@@ -203,7 +238,7 @@ typedef struct Batch {
 
 static bool batch_fits(const ScanState *state, const Batch *batch, uint32_t length)
 {
-    uint64_t need = (uint64_t)align4(state->listing_used + length + 2) +
+    uint64_t need = (uint64_t)align4(state->listing_used + length + 1 + RECORD_META_SIZE) +
                     (uint64_t)(batch->count + 1) * ENTRY_OVERHEAD;
     return need <= batch->end;
 }
@@ -219,7 +254,7 @@ static void keep_smaller_half(ScanState *state, Batch *batch)
     }
     uint32_t write = batch->start;
     for (uint32_t read = batch->start; read < state->listing_used;) {
-        uint32_t size = 2 + text_length(entry_name(state, read));
+        uint32_t size = entry_record_length(state, read);
         if (compare_texts(entry_name(state, read), state->cutoff) < 0) {
             for (uint32_t index = 0; index < size; index++) {
                 state->listing[write + index] = state->listing[read + index];
@@ -357,24 +392,73 @@ static ScanResult builder_result(BuilderResult result)
     return SCAN_WRITE_FAILED;
 }
 
-static ScanResult add_file(ScanState *state, const ScanJob *job, ScanStats *stats)
+static ScanResult add_file(ScanState *state, const ScanJob *job, ScanStats *stats, uint32_t size,
+                           uint32_t modified)
 {
-    ByteSource source;
-    uint32_t size = 0;
     stats->files++;
-    bool read = job->files.open_file(job->files.context, state->path, &source, &size);
-    if (read) {
-        TagFormat format = track_tags_format_for_name(state->path);
-        read = track_tags_read(source, size, format, &state->tags);
-        job->files.close_file(job->files.context);
-    }
     ScanResult result = SCAN_OK;
-    if (read) {
-        track_fields_from_tags(state->path + 1, &state->tags, &state->fields);
-        result = builder_result(library_builder_add_track(&state->builder, &state->fields.track));
+    CachedTrack cached;
+    if (state->has_cache &&
+        track_cache_find(&state->cache_reader, state->path + 1, size, modified, &cached,
+                         state->cache_text, sizeof state->cache_text)) {
+        BuilderTrack track = {
+            .path = state->path + 1,
+            .title = cached.title,
+            .artist = cached.artist,
+            .album_artist = cached.album_artist,
+            .album = cached.album,
+            .genre = cached.genre,
+            .year = cached.year,
+            .disc = cached.disc,
+            .number = cached.number,
+            .duration_ms = cached.duration_ms,
+        };
+        result = builder_result(library_builder_add_track(&state->builder, &track));
         stats->tracks += result == SCAN_OK;
+        if (state->has_writer && result == SCAN_OK) {
+            cached.flags = TRACK_FLAG_CACHE_HIT;
+            track_cache_writer_put(&state->cache_writer, &cached);
+        }
     } else {
-        stats->skipped++;
+        ByteSource source;
+        uint32_t file_size = size;
+        bool read = job->files.open_file(job->files.context, state->path, &source, &file_size);
+        if (read) {
+            TagFormat format = track_tags_format_for_name(state->path);
+            read = track_tags_read(source, file_size, format, &state->tags);
+            job->files.close_file(job->files.context);
+        }
+        if (read) {
+            track_fields_from_tags(state->path + 1, &state->tags, &state->fields);
+            result = builder_result(library_builder_add_track(&state->builder, &state->fields.track));
+            stats->tracks += result == SCAN_OK;
+            if (state->has_writer && result == SCAN_OK) {
+                CachedTrack to_cache = {
+                    .size = file_size,
+                    .modified = modified,
+                    .duration_ms = state->fields.track.duration_ms,
+                    .year = state->fields.track.year,
+                    .disc = state->fields.track.disc,
+                    .number = state->fields.track.number,
+                    .picture = (CachedPicture){
+                        .kind = (uint8_t)state->tags.picture.kind,
+                        .front = state->tags.picture.front ? 1 : 0,
+                        .offset = state->tags.picture.offset,
+                        .length = state->tags.picture.length,
+                    },
+                    .path = state->path + 1,
+                    .title = state->fields.track.title,
+                    .artist = state->fields.track.artist,
+                    .album_artist = state->fields.track.album_artist,
+                    .album = state->fields.track.album,
+                    .genre = state->fields.track.genre,
+                    .flags = 0,
+                };
+                track_cache_writer_put(&state->cache_writer, &to_cache);
+            }
+        } else {
+            stats->skipped++;
+        }
     }
     if (job->progress.report != NULL) {
         job->progress.report(job->progress.context, stats->files, stats->tracks);
@@ -443,7 +527,9 @@ static ScanResult visit_entry(ScanState *state, const ScanJob *job, ScanStats *s
         return SCAN_PATH_TOO_LONG;
     }
     if (!directory) {
-        ScanResult result = add_file(state, job, stats);
+        uint32_t size = entry_size(state, offset);
+        uint32_t modified = entry_modified(state, offset);
+        ScanResult result = add_file(state, job, stats, size, modified);
         truncate_path(state, state->levels[state->depth - 1].path_length);
         return result;
     }
@@ -479,6 +565,17 @@ static ScanResult walk(ScanState *state, const ScanJob *job, ScanStats *stats)
     return result;
 }
 
+static uint8_t *take(uint8_t **cursor, uint8_t *end, uint32_t bytes)
+{
+    uintptr_t address = (uintptr_t)*cursor;
+    uint8_t *start = *cursor + (ALIGNMENT - address % ALIGNMENT) % ALIGNMENT;
+    if (start > end || (uint32_t)(end - start) < bytes) {
+        return NULL;
+    }
+    *cursor = start + bytes;
+    return start;
+}
+
 static bool split_memory(ScanState **state, const ScanJob *job)
 {
     uintptr_t start = (uintptr_t)job->memory;
@@ -488,20 +585,36 @@ static bool split_memory(ScanState **state, const ScanJob *job)
     if (job->size < skip + header + MINIMUM_LISTING * (separate ? 1u : 2u)) {
         return false;
     }
-    uint32_t size = job->size - skip;
-    uint32_t listing = separate ? job->listing_size : size / LISTING_SHARE;
+    uint8_t *memory = (uint8_t *)job->memory + skip;
+    uint8_t *cursor = memory + header;
+    uint8_t *end = (uint8_t *)job->memory + job->size;
+
+    *state = (ScanState *)(void *)memory;
+    (*state)->read_index = NULL;
+    if (job->cache_source.read != NULL) {
+        (*state)->read_index = (TrackCacheIndexEntry *)take(
+            &cursor, end, TRACK_CACHE_MAX_ENTRIES * (uint32_t)sizeof(TrackCacheIndexEntry));
+    }
+    (*state)->write_index = NULL;
+    if (job->cache_sink.write != NULL) {
+        (*state)->write_index = (TrackCacheIndexEntry *)take(
+            &cursor, end, TRACK_CACHE_MAX_ENTRIES * (uint32_t)sizeof(TrackCacheIndexEntry));
+    }
+
+    uint32_t remaining = cursor < end ? (uint32_t)(end - cursor) : 0;
+    uint32_t listing = separate ? job->listing_size : remaining / LISTING_SHARE;
     listing = listing < MINIMUM_LISTING ? MINIMUM_LISTING : listing;
     listing = listing > MAXIMUM_LISTING ? MAXIMUM_LISTING : listing;
-    uint8_t *memory = (uint8_t *)job->memory + skip;
     uint32_t taken = separate ? 0 : listing;
-    *state = (ScanState *)(void *)memory;
-    (*state)->listing = separate ? (uint8_t *)job->listing : memory + header;
+    if (remaining < taken + MINIMUM_LISTING) {
+        return false;
+    }
+    (*state)->listing = separate ? (uint8_t *)job->listing : cursor;
     (*state)->listing_size = listing;
     (*state)->listing_used = 0;
     (*state)->playlist_floor = listing;
     (*state)->playlist_count = 0;
-    library_builder_init(&(*state)->builder, memory + header + taken, size - header - taken,
-                         job->scratch);
+    library_builder_init(&(*state)->builder, cursor + taken, remaining - taken, job->scratch);
     return true;
 }
 
@@ -577,9 +690,22 @@ ScanResult library_scan(const ScanJob *job, ScanStats *stats)
     if (!split_memory(&state, job)) {
         return SCAN_OUT_OF_MEMORY;
     }
+    state->has_cache =
+        state->read_index != NULL &&
+        track_cache_open(&state->cache_reader, job->cache_source, job->cache_size,
+                         state->read_index, TRACK_CACHE_MAX_ENTRIES);
+    state->has_writer = job->cache_sink.write != NULL && state->write_index != NULL;
+    if (state->has_writer) {
+        track_cache_writer_init(&state->cache_writer, job->cache_sink, job->cache_capacity,
+                                state->write_index, TRACK_CACHE_MAX_ENTRIES);
+    }
     state->path[0] = '/';
     truncate_path(state, 1);
     ScanResult result = walk(state, job, stats);
+    if (state->has_writer && result == SCAN_OK) {
+        uint32_t written = 0;
+        track_cache_writer_finish(&state->cache_writer, &written);
+    }
     if (result == SCAN_OK) {
         result = read_playlists(state, job);
     }

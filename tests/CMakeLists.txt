@@ -299,6 +299,9 @@ if(ECHO_BUILD_SIM)
     add_executable(cover_build_tool library/cover_build_tool.c)
     target_link_libraries(cover_build_tool PRIVATE echo_library_scan echo_sim_storage
         echo_options)
+    add_executable(scan_bench_tool library/scan_bench_tool.c)
+    target_link_libraries(scan_bench_tool PRIVATE echo_library_scan echo_library echo_sim_storage
+        echo_options)
     if(EXISTS ${PROJECT_SOURCE_DIR}/.venv/bin/python)
         add_test(NAME cover_build_matches_reference
             COMMAND ${PROJECT_SOURCE_DIR}/.venv/bin/python

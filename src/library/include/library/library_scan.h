@@ -14,6 +14,8 @@ enum {
 
 typedef struct ScanEntry {
     bool directory;
+    uint32_t size;
+    uint32_t modified;
     char name[SCAN_NAME_CAPACITY];
 } ScanEntry;
 
@@ -62,6 +64,10 @@ typedef struct ScanJob {
     ByteSink sink;
     uint32_t capacity;
     ScanProgress progress;
+    ByteSource cache_source;
+    uint32_t cache_size;
+    ByteSink cache_sink;
+    uint32_t cache_capacity;
 } ScanJob;
 
 #define LIBRARY_SCAN_MAGIC 0x4E414353u

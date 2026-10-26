@@ -10,12 +10,16 @@
 
 static const char MUSIC_ROOT[] = "/";
 const char LIBRARY_SCRATCH_PATH[] = "/.echo/build.tmp";
+const char CACHE_STORE_PATH[] = "/.echo/cache.bin";
+const char CACHE_TMP_PATH[] = "/.echo/cache.tmp";
 
 typedef struct RescanFiles {
     HalDir dir;
     HalFile file;
     HalFile library;
     HalFile scratch;
+    HalFile cache;
+    HalFile covers;
     HalDirEntry entry;
     RescanProgress progress;
 } RescanFiles;
@@ -34,6 +38,8 @@ static bool next_entry(void *context, ScanEntry *entry)
         return false;
     }
     entry->directory = files->entry.directory;
+    entry->size = files->entry.size;
+    entry->modified = files->entry.modified;
     for (size_t index = 0; index < sizeof entry->name; index++) {
         entry->name[index] = files->entry.name[index];
     }
@@ -100,6 +106,70 @@ static void report(void *context, uint32_t files, uint32_t tracks)
     }
 }
 
+static bool read_cache(void *context, uint32_t offset, void *buffer, uint32_t length)
+{
+    RescanFiles *files = context;
+    hal_system_keep_alive();
+    return hal_file_read(files->cache, offset, buffer, length);
+}
+
+static bool write_cache(void *context, uint32_t offset, const void *bytes, uint32_t length)
+{
+    (void)context;
+    hal_system_keep_alive();
+    return hal_file_write_at(CACHE_TMP_PATH, offset, bytes, length);
+}
+
+static bool read_covers(void *context, uint32_t offset, void *buffer, uint32_t length)
+{
+    RescanFiles *files = context;
+    hal_system_keep_alive();
+    return hal_file_read(files->covers, offset, buffer, length);
+}
+
+static void promote_cache(void)
+{
+    HalFile tmp;
+    if (!hal_file_open(&tmp, CACHE_TMP_PATH)) {
+        return;
+    }
+    uint8_t header[32];
+    if (!hal_file_read(tmp, 0, header, sizeof header)) {
+        hal_file_close(&tmp);
+        return;
+    }
+    uint32_t magic = (uint32_t)header[0] | (uint32_t)header[1] << 8 |
+                     (uint32_t)header[2] << 16 | (uint32_t)header[3] << 24;
+    if (magic != 0x43544D45u) {
+        hal_file_close(&tmp);
+        return;
+    }
+    uint32_t index_offset = (uint32_t)header[12] | (uint32_t)header[13] << 8 |
+                            (uint32_t)header[14] << 16 | (uint32_t)header[15] << 24;
+    uint32_t count = (uint32_t)header[8] | (uint32_t)header[9] << 8 |
+                     (uint32_t)header[10] << 16 | (uint32_t)header[11] << 24;
+    uint32_t total = index_offset + count * 8;
+    if (total > tmp.size) {
+        hal_file_close(&tmp);
+        return;
+    }
+    uint8_t zero[32] = {0};
+    hal_file_write_at(CACHE_STORE_PATH, 0, zero, sizeof zero);
+    uint8_t buffer[512];
+    uint32_t offset = 32;
+    bool ok = true;
+    while (ok && offset < total) {
+        uint32_t chunk = total - offset < sizeof buffer ? total - offset : sizeof buffer;
+        ok = hal_file_read(tmp, offset, buffer, chunk) &&
+             hal_file_write_at(CACHE_STORE_PATH, offset, buffer, chunk);
+        offset += chunk;
+    }
+    if (ok) {
+        hal_file_write_at(CACHE_STORE_PATH, 0, header, sizeof header);
+    }
+    hal_file_close(&tmp);
+}
+
 static bool read_library(void *context, uint32_t offset, void *buffer, uint32_t length)
 {
     RescanFiles *files = context;
@@ -156,6 +226,7 @@ static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *sca
     if (!hal_file_open(&files->library, LIBRARY_STORE_PATH)) {
         return SCAN_WRITE_FAILED;
     }
+    bool has_covers = hal_file_open(&files->covers, COVER_CACHE_PATH);
     CoverJob job = {
         .files = scan->files,
         .library = {read_library, files},
@@ -165,8 +236,15 @@ static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *sca
         .memory = scan->memory,
         .size = scan->size,
         .progress = {report_covers, files},
+        .cache = scan->cache_source,
+        .cache_size = scan->cache_size,
+        .existing_covers = {read_covers, files},
+        .existing_covers_size = has_covers ? files->covers.size : 0,
     };
     ScanResult result = entry->covers(&job, stats);
+    if (has_covers) {
+        hal_file_close(&files->covers);
+    }
     hal_file_close(&files->library);
     return result;
 }
@@ -198,6 +276,9 @@ RescanOutcome library_rescan_run(RescanProgress progress)
     void *memory = hal_system_borrow_scratch(&size);
     uint32_t listing_size = 0;
     void *listing = memory != NULL ? hal_system_borrow_listing(&listing_size) : NULL;
+    uint32_t cache_capacity = reserved_size_of(CACHE_TMP_PATH);
+    bool has_cache = hal_file_open(&files.cache, CACHE_STORE_PATH);
+    uint32_t cache_size = has_cache ? files.cache.size : 0;
     ScanJob job = {
         .files = {open_dir, next_entry, close_dir, open_file, close_file, &files},
         .memory = memory,
@@ -208,10 +289,18 @@ RescanOutcome library_rescan_run(RescanProgress progress)
         .sink = {write_library, NULL},
         .capacity = capacity,
         .progress = {report, &files},
+        .cache_source = {read_cache, &files},
+        .cache_size = cache_size,
+        .cache_sink = {write_cache, NULL},
+        .cache_capacity = cache_capacity,
     };
     outcome.result = memory != NULL ? entry->scan(&job, &outcome.stats) : SCAN_NO_SCRATCH;
     if (outcome.result == SCAN_OK) {
+        promote_cache();
         outcome.cover_result = build_covers(entry, &job, &outcome.covers);
+    }
+    if (has_cache) {
+        hal_file_close(&files.cache);
     }
     hal_file_close(&files.scratch);
     hal_system_return_scratch();

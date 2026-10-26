@@ -35,6 +35,7 @@ add_library(echo_library_scan STATIC
     tags_mpeg.c
     tags_riff.c
     tags_vorbis.c
+    track_cache.c
     track_fields.c
     track_tags.c
 )

@@ -39,6 +39,8 @@ static bool next_entry(void *context, ScanEntry *entry)
         return false;
     }
     entry->directory = files->entry.directory;
+    entry->size = files->entry.size;
+    entry->modified = files->entry.modified;
     memcpy(entry->name, files->entry.name, sizeof entry->name);
     return true;
 }
@@ -132,8 +134,9 @@ int main(int argc, char **argv)
     }
     CoverStats cover_stats;
     CoverJob job = {
-        system, {read_output, &library}, LIBRARY_CAPACITY, {write_output, &covers}, COVERS_CAPACITY,
-        memory, sizeof memory,           {NULL, NULL}};
+        system,        {read_output, &library}, LIBRARY_CAPACITY, {write_output, &covers},
+        COVERS_CAPACITY, memory,                sizeof memory,    {NULL, NULL},
+        {NULL, NULL},  0,                       {NULL, NULL},     0};
     result = cover_build(&job, &cover_stats);
     if (result != SCAN_OK) {
         fprintf(stderr, "covers failed: %d\n", result);

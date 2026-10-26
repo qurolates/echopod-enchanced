@@ -296,9 +296,56 @@ static bool read_format(TagReader *reader, TagFormat format)
     return false;
 }
 
+enum {
+    TAG_BUFFER_SIZE = 512
+};
+
+typedef struct BufferedSource {
+    ByteSource underlying;
+    uint32_t size;
+    uint32_t offset;
+    uint32_t length;
+    uint8_t buffer[TAG_BUFFER_SIZE];
+} BufferedSource;
+
+static bool buffered_read(void *context, uint32_t offset, void *buffer, uint32_t length)
+{
+    BufferedSource *buf = context;
+    if (offset > buf->size || length > buf->size - offset) {
+        return false;
+    }
+    if (length == 0) {
+        return true;
+    }
+    if (buf->length > 0 && offset >= buf->offset &&
+        offset + length <= buf->offset + buf->length) {
+        uint8_t *dest = buffer;
+        for (uint32_t index = 0; index < length; index++) {
+            dest[index] = buf->buffer[offset - buf->offset + index];
+        }
+        return true;
+    }
+    if (length <= TAG_BUFFER_SIZE) {
+        uint32_t take = buf->size - offset < TAG_BUFFER_SIZE ? buf->size - offset : TAG_BUFFER_SIZE;
+        if (!buf->underlying.read(buf->underlying.context, offset, buf->buffer, take)) {
+            return false;
+        }
+        buf->offset = offset;
+        buf->length = take;
+        uint8_t *dest = buffer;
+        for (uint32_t index = 0; index < length; index++) {
+            dest[index] = buf->buffer[index];
+        }
+        return true;
+    }
+    return buf->underlying.read(buf->underlying.context, offset, buffer, length);
+}
+
 bool track_tags_read(ByteSource source, uint32_t size, TagFormat format, TrackTags *tags)
 {
     *tags = (TrackTags){.duration_ms = 0, .picture = {.kind = TAG_PICTURE_NONE}};
-    TagReader reader = {.source = source, .size = size, .tags = tags};
+    BufferedSource buffered = {.underlying = source, .size = size, .offset = 0, .length = 0};
+    ByteSource fast_source = {.read = buffered_read, .context = &buffered};
+    TagReader reader = {.source = fast_source, .size = size, .tags = tags};
     return read_format(&reader, format);
 }

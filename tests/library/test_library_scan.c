@@ -4,8 +4,11 @@
 
 #include "check.h"
 #include "hal/storage.h"
+#include "library/cover_build.h"
+#include "library/covers.h"
 #include "library/library.h"
 #include "library/library_scan.h"
+#include "library/track_cache.h"
 #include "library_compare.h"
 #include "sim_storage.h"
 
@@ -39,6 +42,8 @@ static bool next_entry(void *context, ScanEntry *entry)
         return false;
     }
     entry->directory = files->entry.directory;
+    entry->size = files->entry.size;
+    entry->modified = files->entry.modified;
     memcpy(entry->name, files->entry.name, sizeof entry->name);
     return true;
 }
@@ -233,10 +238,14 @@ enum {
 typedef struct TreeEntry {
     char name[TREE_PATH];
     bool directory;
+    uint32_t size;
+    uint32_t modified;
 } TreeEntry;
 
 typedef struct Tree {
     char paths[TREE_CAPACITY][TREE_PATH];
+    uint32_t size[TREE_CAPACITY];
+    uint32_t modified[TREE_CAPACITY];
     uint32_t count;
     TreeEntry listing[TREE_CAPACITY];
     uint32_t listed;
@@ -249,6 +258,8 @@ static Tree tree;
 
 static void tree_add(const char *path)
 {
+    tree.size[tree.count] = sizeof tree.blob;
+    tree.modified[tree.count] = 1000;
     snprintf(tree.paths[tree.count++], TREE_PATH, "%s", path);
 }
 
@@ -276,6 +287,8 @@ static bool tree_open_dir(void *context, const char *path)
             TreeEntry *entry = &tree.listing[tree.listed++];
             snprintf(entry->name, TREE_PATH, "%.*s", (int)length, rest);
             entry->directory = slash != NULL;
+            entry->size = slash != NULL ? 0 : tree.size[index];
+            entry->modified = slash != NULL ? 0 : tree.modified[index];
         }
     }
     return tree.listed > 0;
@@ -289,6 +302,8 @@ static bool tree_next_entry(void *context, ScanEntry *entry)
     }
     const TreeEntry *next = &tree.listing[tree.listed - 1 - tree.cursor++];
     entry->directory = next->directory;
+    entry->size = next->size;
+    entry->modified = next->modified;
     snprintf(entry->name, sizeof entry->name, "%s", next->name);
     return true;
 }
@@ -350,6 +365,30 @@ static ScanResult scan_tree(uint32_t listing_size, Output *output, ScanStats *st
         .listing_size = listing_size,
         .scratch = SCRATCH,
         .sink = {write_output, output},
+    };
+    return library_scan(&job, stats);
+}
+
+static ScanResult scan_tree_cached(uint32_t listing_size, Output *output, ScanStats *stats,
+                                   ByteSource cache_source, uint32_t cache_size,
+                                   ByteSink cache_sink, uint32_t cache_capacity)
+{
+    static uint8_t memory[MEMORY_SIZE];
+    static uint8_t listing[96 * 1024];
+    output->length = 0;
+    ScanJob job = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .memory = memory,
+        .size = sizeof memory,
+        .listing = listing,
+        .listing_size = listing_size,
+        .scratch = SCRATCH,
+        .sink = {write_output, output},
+        .cache_source = cache_source,
+        .cache_size = cache_size,
+        .cache_sink = cache_sink,
+        .cache_capacity = cache_capacity,
     };
     return library_scan(&job, stats);
 }
@@ -466,6 +505,173 @@ static void batches_build_the_same_library_as_one_whole_read(void)
     CHECK(library_compare(whole.bytes, whole.length, batched.bytes, batched.length));
 }
 
+static void track_cache_stores_and_revalidates_metadata(void)
+{
+    static Output output_a;
+    static Output output_b;
+    static Output cache_a;
+    static Output cache_b;
+    cache_a.length = 0;
+    cache_b.length = 0;
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Song One.mp3");
+    tree_add("/Artist A/Album 1/02 - Song Two.mp3");
+    tree_add("/Artist B/Album 2/01 - Song Three.mp3");
+
+    ScanStats stats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_a, &stats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache_a}, sizeof cache_a.bytes));
+    CHECK_EQUAL(3u, stats.tracks);
+    CHECK(cache_a.length > 0);
+
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_b, &stats,
+                                          (ByteSource){output_read, &cache_a}, cache_a.length,
+                                          (ByteSink){write_output, &cache_b}, sizeof cache_b.bytes));
+    CHECK_EQUAL(3u, stats.tracks);
+    CHECK(cache_b.length > 0);
+    CHECK(library_compare(output_a.bytes, output_a.length, output_b.bytes, output_b.length));
+}
+
+static void track_cache_invalidates_on_mtime_or_size_change(void)
+{
+    static Output output_a;
+    static Output output_b;
+    static Output cache_a;
+    static Output cache_b;
+    cache_a.length = 0;
+    cache_b.length = 0;
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Song One.mp3");
+    tree_add("/Artist A/Album 1/02 - Song Two.mp3");
+
+    ScanStats stats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_a, &stats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache_a}, sizeof cache_a.bytes));
+    CHECK_EQUAL(2u, stats.tracks);
+
+    tree.modified[0] += 5000;
+    tree.size[1] += 128;
+
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_b, &stats,
+                                          (ByteSource){output_read, &cache_a}, cache_a.length,
+                                          (ByteSink){write_output, &cache_b}, sizeof cache_b.bytes));
+    CHECK_EQUAL(2u, stats.tracks);
+
+    TrackCacheReader reader;
+    TrackCacheIndexEntry idx[16];
+    CHECK(track_cache_open(&reader, (ByteSource){output_read, &cache_b}, cache_b.length, idx, 16));
+    CachedTrack track;
+    char text[512];
+    CHECK(track_cache_find(&reader, "Artist A/Album 1/01 - Song One.mp3", tree.size[0],
+                           tree.modified[0], &track, text, sizeof text));
+    CHECK_EQUAL(tree.modified[0], track.modified);
+}
+
+static void track_cache_drops_deleted_files(void)
+{
+    static Output output_a;
+    static Output output_b;
+    static Output cache_a;
+    static Output cache_b;
+    cache_a.length = 0;
+    cache_b.length = 0;
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Song One.mp3");
+    tree_add("/Artist A/Album 1/02 - Song Two.mp3");
+
+    ScanStats stats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_a, &stats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache_a}, sizeof cache_a.bytes));
+    CHECK_EQUAL(2u, stats.tracks);
+
+    tree.count = 1;
+
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_b, &stats,
+                                          (ByteSource){output_read, &cache_a}, cache_a.length,
+                                          (ByteSink){write_output, &cache_b}, sizeof cache_b.bytes));
+    CHECK_EQUAL(1u, stats.tracks);
+
+    TrackCacheReader reader;
+    TrackCacheIndexEntry idx[16];
+    CHECK(track_cache_open(&reader, (ByteSource){output_read, &cache_b}, cache_b.length, idx, 16));
+    CHECK_EQUAL(1u, reader.count);
+    CachedTrack track;
+    char text[512];
+    CHECK(!track_cache_find(&reader, "Artist A/Album 1/02 - Song Two.mp3", 0, 0, &track, text,
+                            sizeof text));
+}
+
+static void track_cache_interrupted_write_is_invalid(void)
+{
+    static Output cache_mem;
+    cache_mem.length = 0;
+    TrackCacheIndexEntry idx[16];
+    TrackCacheWriter writer;
+    track_cache_writer_init(&writer, (ByteSink){write_output, &cache_mem}, sizeof cache_mem.bytes,
+                            idx, 16);
+    CachedTrack track = {
+        .size = 100,
+        .modified = 200,
+        .duration_ms = 1000,
+        .year = 2024,
+        .disc = 1,
+        .number = 1,
+        .picture = {.kind = 0},
+        .path = "Song.mp3",
+        .title = "T",
+        .artist = "A",
+        .album_artist = "AA",
+        .album = "L",
+        .genre = "G",
+    };
+    CHECK(track_cache_writer_put(&writer, &track));
+
+    TrackCacheReader reader;
+    TrackCacheIndexEntry read_idx[16];
+    CHECK(!track_cache_open(&reader, (ByteSource){output_read, &cache_mem}, cache_mem.length,
+                            read_idx, 16));
+}
+
+static void cover_build_skips_when_covers_unchanged(void)
+{
+    static Output output;
+    static Output covers;
+    static Output cache;
+    static uint8_t memory[MEMORY_SIZE];
+    covers.length = 0;
+    cache.length = 0;
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Song.mp3");
+    ScanStats sstats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output, &sstats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache}, sizeof cache.bytes));
+    CoverStats cstats;
+    CoverJob job = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .library = {output_read, &output},
+        .library_size = output.length,
+        .sink = {write_output, &covers},
+        .capacity = sizeof covers.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache},
+        .cache_size = cache.length,
+        .existing_covers = {NULL, NULL},
+        .existing_covers_size = 0,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&job, &cstats));
+    CHECK_EQUAL(1u, cstats.albums);
+
+    job.existing_covers = (ByteSource){output_read, &covers};
+    job.existing_covers_size = covers.length;
+    uint32_t covers_len_before = covers.length;
+    CHECK_EQUAL(SCAN_OK, cover_build(&job, &cstats));
+    CHECK_EQUAL(1u, cstats.albums);
+    CHECK_EQUAL(covers_len_before, covers.length);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -477,6 +683,11 @@ int main(void)
         TEST_CASE(many_sibling_folders_fit_a_small_listing),
         TEST_CASE(a_big_folder_nested_in_big_folders_is_read_in_batches),
         TEST_CASE(batches_build_the_same_library_as_one_whole_read),
+        TEST_CASE(track_cache_stores_and_revalidates_metadata),
+        TEST_CASE(track_cache_invalidates_on_mtime_or_size_change),
+        TEST_CASE(track_cache_drops_deleted_files),
+        TEST_CASE(track_cache_interrupted_write_is_invalid),
+        TEST_CASE(cover_build_skips_when_covers_unchanged),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

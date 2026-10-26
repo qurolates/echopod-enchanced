@@ -5,6 +5,7 @@
 #include "image/cover_image.h"
 #include "library/covers.h"
 #include "library/library.h"
+#include "library/track_cache.h"
 #include "library/track_tags.h"
 
 enum {
@@ -26,6 +27,11 @@ typedef struct CoverEntry {
     uint32_t offset;
 } CoverEntry;
 
+typedef struct FolderMatch {
+    uint8_t checked;
+    char name[MATCH_CAPACITY];
+} FolderMatch;
+
 typedef struct CoverState {
     Library library;
     TrackTags tags;
@@ -42,6 +48,12 @@ typedef struct CoverState {
     uint32_t records_start;
     uint8_t *decode_memory;
     uint32_t decode_size;
+    FolderMatch *folder_matches;
+    uint32_t folder_match_count;
+    TrackCacheReader cache_reader;
+    bool has_cache;
+    Covers existing_covers;
+    bool has_existing_covers;
 } CoverState;
 
 static uint8_t *take(uint8_t **cursor, uint8_t *end, uint32_t bytes)
@@ -64,7 +76,7 @@ static uint32_t cover_limit(const CoverJob *job, uint32_t albums)
     return limit < COVER_BUILD_MAX_COVERS ? limit : COVER_BUILD_MAX_COVERS;
 }
 
-static CoverState *prepare(const CoverJob *job, uint32_t albums)
+static CoverState *prepare(const CoverJob *job, uint32_t albums, uint32_t folders)
 {
     uint8_t *cursor = job->memory;
     uint8_t *end = cursor + job->size;
@@ -77,8 +89,27 @@ static CoverState *prepare(const CoverJob *job, uint32_t albums)
     if (state->index == NULL) {
         return NULL;
     }
+    state->folder_matches =
+        (FolderMatch *)take(&cursor, end, folders * (uint32_t)sizeof(FolderMatch));
+    if (state->folder_matches != NULL) {
+        for (uint32_t index = 0; index < folders; index++) {
+            state->folder_matches[index].checked = 0;
+            state->folder_matches[index].name[0] = '\0';
+        }
+        state->folder_match_count = folders;
+    } else {
+        state->folder_match_count = 0;
+    }
     state->count = 0;
     state->records_start = COVERS_HEADER_SIZE + state->limit * COVERS_ENTRY_SIZE;
+    TrackCacheIndexEntry *cache_index =
+        (TrackCacheIndexEntry *)take(&cursor, end, TRACK_CACHE_MAX_ENTRIES * sizeof(TrackCacheIndexEntry));
+    state->has_cache =
+        cache_index != NULL && track_cache_open(&state->cache_reader, job->cache, job->cache_size,
+                                                cache_index, TRACK_CACHE_MAX_ENTRIES);
+    state->has_existing_covers =
+        job->existing_covers.read != NULL &&
+        covers_open(&state->existing_covers, job->existing_covers, job->existing_covers_size);
     state->decode_memory = cursor;
     state->decode_size = (uint32_t)(end - cursor);
     return state;
@@ -130,17 +161,39 @@ static bool embedded_cover(CoverState *state, const CoverJob *job, uint32_t trac
                            bool *decoded)
 {
     LibraryTrack track;
+    if (!read_track_path(state, track_index, &track)) {
+        return false;
+    }
+    CachedPicture picture;
+    if (state->has_cache &&
+        track_cache_find_picture(&state->cache_reader, state->path + 1, &picture)) {
+        if (picture.kind != TAG_PICTURE_RAW || picture.length < 16) {
+            *decoded = false;
+            return false;
+        }
+        ByteSource source;
+        uint32_t size = 0;
+        if (!job->files.open_file(job->files.context, state->path, &source, &size)) {
+            return false;
+        }
+        if (picture.offset > size || picture.length > size - picture.offset) {
+            job->files.close_file(job->files.context);
+            return false;
+        }
+        *decoded = decode_from(state, source, picture.offset, picture.length);
+        job->files.close_file(job->files.context);
+        return true;
+    }
     ByteSource source;
     uint32_t size = 0;
-    if (!read_track_path(state, track_index, &track) ||
-        !job->files.open_file(job->files.context, state->path, &source, &size)) {
+    if (!job->files.open_file(job->files.context, state->path, &source, &size)) {
         return false;
     }
     TagFormat format = track_tags_format_for_name(state->path);
     bool tagged = track_tags_read(source, size, format, &state->tags);
-    TagPicture picture = state->tags.picture;
-    bool found = tagged && picture.kind == TAG_PICTURE_RAW && picture.length > 0;
-    *decoded = found && decode_from(state, source, picture.offset, picture.length);
+    TagPicture pic = state->tags.picture;
+    bool found = tagged && pic.kind == TAG_PICTURE_RAW && pic.length > 0;
+    *decoded = found && decode_from(state, source, pic.offset, pic.length);
     job->files.close_file(job->files.context);
     return found;
 }
@@ -283,7 +336,23 @@ static bool folder_cover(CoverState *state, const CoverJob *job, const LibraryAl
             folder_tried(state, info.folder)) {
             continue;
         }
+        if (state->folder_matches != NULL && info.folder < state->folder_match_count &&
+            state->folder_matches[info.folder].checked) {
+            if (state->folder_matches[info.folder].name[0] == '\0') {
+                continue;
+            }
+            copy_name(match, state->folder_matches[info.folder].name);
+            return append_name(state, match) && decode_file(state, job);
+        }
         const char *name = best_match(state, job);
+        if (state->folder_matches != NULL && info.folder < state->folder_match_count) {
+            state->folder_matches[info.folder].checked = 1;
+            if (name != NULL) {
+                copy_name(state->folder_matches[info.folder].name, name);
+            } else {
+                state->folder_matches[info.folder].name[0] = '\0';
+            }
+        }
         if (name != NULL) {
             copy_name(match, name);
             return append_name(state, match) && decode_file(state, job);
@@ -379,6 +448,79 @@ static void report(const CoverJob *job, uint32_t done, uint32_t total)
     }
 }
 
+static bool copy_existing_cover(CoverState *state, const CoverJob *job, uint32_t key,
+                                uint32_t old_record)
+{
+    uint32_t offset = state->records_start + state->count * COVER_BUILD_RECORD_BYTES;
+    if (offset + COVER_BUILD_RECORD_BYTES > job->capacity) {
+        return false;
+    }
+    uint32_t chunk_size = 4096;
+    uint32_t copied = 0;
+    while (copied < COVER_BUILD_RECORD_BYTES) {
+        uint32_t count = COVER_BUILD_RECORD_BYTES - copied < chunk_size
+                             ? COVER_BUILD_RECORD_BYTES - copied
+                             : chunk_size;
+        if (!state->existing_covers.source.read(state->existing_covers.source.context,
+                                               old_record + copied, state->decode_memory, count) ||
+            !write_bytes(job, offset + copied, state->decode_memory, count)) {
+            return false;
+        }
+        copied += count;
+    }
+    state->index[state->count++] = (CoverEntry){key, offset};
+    return true;
+}
+
+static bool can_keep_existing_covers(CoverState *state, const CoverJob *job, uint32_t albums)
+{
+    (void)job;
+    if (!state->has_existing_covers) {
+        return false;
+    }
+    uint32_t covers_matched = 0;
+    for (uint32_t album_index = 0; album_index < albums; album_index++) {
+        LibraryAlbum album;
+        if (!library_read_album(&state->library, album_index, &album)) {
+            return false;
+        }
+        uint32_t key = library_album_key(&state->library, album_index);
+        uint32_t old_record = 0;
+        bool in_existing = covers_find(&state->existing_covers, key, &old_record);
+        if (album.track_count == 0) {
+            if (in_existing) {
+                return false;
+            }
+            continue;
+        }
+        LibraryTrack track;
+        if (!read_track_path(state, album.first_track, &track)) {
+            return false;
+        }
+        CachedPicture picture;
+        bool has_pic =
+            state->has_cache &&
+            track_cache_find_picture(&state->cache_reader, state->path + 1, &picture) &&
+            picture.kind == TAG_PICTURE_RAW && picture.length >= 16;
+        if (has_pic) {
+            uint8_t flags = 0;
+            if (!track_cache_find_flags(&state->cache_reader, state->path + 1, &flags) ||
+                !(flags & TRACK_FLAG_CACHE_HIT)) {
+                return false;
+            }
+            if (!in_existing) {
+                return false;
+            }
+            covers_matched++;
+        } else {
+            if (in_existing) {
+                return false;
+            }
+        }
+    }
+    return covers_matched == state->existing_covers.count;
+}
+
 static ScanResult build_albums(CoverState *state, const CoverJob *job, CoverStats *stats)
 {
     for (uint32_t album_index = 0; album_index < stats->albums; album_index++) {
@@ -388,7 +530,29 @@ static ScanResult build_albums(CoverState *state, const CoverJob *job, CoverStat
         if (!library_read_album(&state->library, album_index, &album) || has_key(state, key)) {
             continue;
         }
-        if (state->count == state->limit || !album_cover(state, job, &album)) {
+        if (state->count == state->limit) {
+            stats->missing++;
+            continue;
+        }
+        uint32_t old_record = 0;
+        if (state->has_existing_covers && covers_find(&state->existing_covers, key, &old_record) &&
+            album.track_count > 0) {
+            LibraryTrack track;
+            if (read_track_path(state, album.first_track, &track) && state->has_cache) {
+                CachedPicture picture;
+                uint8_t flags = 0;
+                if (track_cache_find_picture(&state->cache_reader, state->path + 1, &picture) &&
+                    picture.kind == TAG_PICTURE_RAW && picture.length >= 16 &&
+                    track_cache_find_flags(&state->cache_reader, state->path + 1, &flags) &&
+                    (flags & TRACK_FLAG_CACHE_HIT)) {
+                    if (!copy_existing_cover(state, job, key, old_record)) {
+                        return SCAN_WRITE_FAILED;
+                    }
+                    continue;
+                }
+            }
+        }
+        if (!album_cover(state, job, &album)) {
             stats->missing++;
         } else if (!store_cover(state, job, key)) {
             return SCAN_WRITE_FAILED;
@@ -406,7 +570,8 @@ ScanResult cover_build(const CoverJob *job, CoverStats *stats)
         return SCAN_NO_MUSIC_ROOT;
     }
     stats->albums = library_count(&probe, LIBRARY_ALBUMS);
-    CoverState *state = prepare(job, stats->albums);
+    uint32_t folders = library_count(&probe, LIBRARY_FOLDERS);
+    CoverState *state = prepare(job, stats->albums, folders);
     if (state == NULL) {
         return SCAN_OUT_OF_MEMORY;
     }
@@ -414,6 +579,12 @@ ScanResult cover_build(const CoverJob *job, CoverStats *stats)
         return SCAN_NO_ROOM;
     }
     state->library = probe;
+    if (can_keep_existing_covers(state, job, stats->albums)) {
+        stats->covers = state->existing_covers.count;
+        stats->missing = stats->albums - stats->covers;
+        report(job, stats->albums, stats->albums);
+        return SCAN_OK;
+    }
     if (!write_header(job, 0, false)) {
         return SCAN_WRITE_FAILED;
     }
