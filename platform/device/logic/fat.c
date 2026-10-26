@@ -183,21 +183,52 @@ static size_t component_length(const char *path)
     return length;
 }
 
+static bool path_has_prefix(const char *path, const char *prefix, size_t length)
+{
+    for (size_t index = 0; index < length; index++) {
+        if (path[index] == '\0' || path[index] != prefix[index]) {
+            return false;
+        }
+    }
+    return path[length] == '/';
+}
+
 static bool walk_path(FatVolume *volume, const char *path, FatFile *found, bool *found_any)
 {
     FatFile current = fat_root_directory(volume);
     *found_any = false;
-    while (*path != '\0') {
-        if (*path == '/') {
-            path++;
+    const char *scan = path;
+    if (volume->parent_len > 0 && path_has_prefix(path, volume->parent_path, volume->parent_len)) {
+        current = volume->parent_dir;
+        *found_any = true;
+        scan = path + volume->parent_len;
+    }
+    FatFile last_dir = current;
+    const char *last_dir_end = scan;
+    while (*scan != '\0') {
+        if (*scan == '/') {
+            scan++;
             continue;
         }
-        size_t length = component_length(path);
-        if (!current.directory || !fat_find_entry(volume, &current, path, length, &current)) {
+        size_t length = component_length(scan);
+        if (!current.directory || !fat_find_entry(volume, &current, scan, length, &current)) {
             return false;
         }
         *found_any = true;
-        path += length;
+        scan += length;
+        if (current.directory) {
+            last_dir = current;
+            last_dir_end = scan;
+        }
+    }
+    if (last_dir_end > path && (size_t)(last_dir_end - path) < sizeof volume->parent_path) {
+        size_t dirlen = (size_t)(last_dir_end - path);
+        for (size_t index = 0; index < dirlen; index++) {
+            volume->parent_path[index] = path[index];
+        }
+        volume->parent_path[dirlen] = '\0';
+        volume->parent_len = (uint16_t)dirlen;
+        volume->parent_dir = last_dir;
     }
     *found = current;
     return true;

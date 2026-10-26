@@ -224,7 +224,9 @@ bool tags_read_mp3(TagReader *reader)
 {
     uint32_t tag_size = 0;
     tags_read_id3v2(reader, 0, &tag_size);
-    tags_read_id3v1(reader);
+    if (!reader->present[TAG_TITLE] || !reader->present[TAG_ARTIST] || !reader->present[TAG_ALBUM]) {
+        tags_read_id3v1(reader);
+    }
     MpegFrame frame;
     if (!find_first_frame(reader, skip_id3(reader), &frame)) {
         return false;

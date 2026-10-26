@@ -15,7 +15,7 @@
 
 enum {
     TRANSITION_CAPACITY = 16,
-    FILE_CAPACITY = 12,
+    FILE_CAPACITY = 20,
     WRITTEN_CAPACITY = 1100,
     PATH_CAPACITY = 260
 };
@@ -51,7 +51,7 @@ typedef struct FakeFile {
 } FakeFile;
 
 enum {
-    STORE_SLOTS = 4,
+    STORE_SLOTS = 8,
     STORE_CAPACITY = 512 * 1024
 };
 

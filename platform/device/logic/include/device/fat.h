@@ -58,6 +58,9 @@ typedef struct FatVolume {
     uint32_t cache[FAT_CACHE_SECTORS * FAT_SECTOR_SIZE / 4];
     uint32_t fat_sector[FAT_SECTOR_SIZE / 4];
     uint16_t long_name[FAT_LONG_NAME_CAPACITY];
+    FatFile parent_dir;
+    char parent_path[256];
+    uint16_t parent_len;
 } FatVolume;
 
 typedef struct FatDirCursor {

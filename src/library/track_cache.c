@@ -305,6 +305,40 @@ bool track_cache_find_flags(const TrackCacheReader *reader, const char *path, ui
     return false;
 }
 
+static bool flush_writer(TrackCacheWriter *writer)
+{
+    if (writer->failed || writer->buffer_used == 0) {
+        return !writer->failed;
+    }
+    if (!writer->sink.write(writer->sink.context, writer->buffer_offset, writer->buffer,
+                            writer->buffer_used)) {
+        writer->failed = true;
+        return false;
+    }
+    writer->buffer_offset += writer->buffer_used;
+    writer->buffer_used = 0;
+    return true;
+}
+
+static bool writer_append(TrackCacheWriter *writer, const void *bytes, uint32_t length)
+{
+    const uint8_t *from = bytes;
+    while (length > 0) {
+        uint32_t room = sizeof(writer->buffer) - writer->buffer_used;
+        uint32_t take = length < room ? length : room;
+        for (uint32_t index = 0; index < take; index++) {
+            writer->buffer[writer->buffer_used + index] = from[index];
+        }
+        writer->buffer_used += take;
+        from += take;
+        length -= take;
+        if (writer->buffer_used == sizeof(writer->buffer) && !flush_writer(writer)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void track_cache_writer_init(TrackCacheWriter *writer, ByteSink sink, uint32_t capacity,
                              TrackCacheIndexEntry *index_memory, uint32_t index_capacity)
 {
@@ -314,6 +348,8 @@ void track_cache_writer_init(TrackCacheWriter *writer, ByteSink sink, uint32_t c
     writer->count = 0;
     writer->index = index_memory;
     writer->index_capacity = index_capacity;
+    writer->buffer_offset = TRACK_CACHE_HEADER_SIZE;
+    writer->buffer_used = 0;
     writer->failed = sink.write == NULL || index_memory == NULL || index_capacity == 0;
     if (!writer->failed) {
         uint8_t blank[TRACK_CACHE_HEADER_SIZE] = {0};
@@ -361,29 +397,24 @@ bool track_cache_writer_put(TrackCacheWriter *writer, const CachedTrack *track)
     header[38] = track->flags;
     header[39] = 0;
 
-    uint32_t offset = writer->offset;
-    if (!writer->sink.write(writer->sink.context, offset, header, sizeof header)) {
+    if (!writer_append(writer, header, sizeof header)) {
         writer->failed = true;
         return false;
     }
-    offset += sizeof header;
 
     const char *strings[6] = {track->path,         track->title, track->artist,
                               track->album_artist, track->album, track->genre};
     uint32_t lengths[6] = {path_len, title_len, artist_len, album_artist_len, album_len, genre_len};
     for (int index = 0; index < 6; index++) {
-        if (lengths[index] > 0) {
-            if (!writer->sink.write(writer->sink.context, offset, strings[index], lengths[index])) {
-                writer->failed = true;
-                return false;
-            }
-            offset += lengths[index];
+        if (lengths[index] > 0 && !writer_append(writer, strings[index], lengths[index])) {
+            writer->failed = true;
+            return false;
         }
     }
     writer->index[writer->count].path_hash = path_hash_of(track->path);
     writer->index[writer->count].offset = writer->offset;
     writer->count++;
-    writer->offset = offset;
+    writer->offset += record_len;
     return true;
 }
 
@@ -405,18 +436,23 @@ bool track_cache_writer_finish(TrackCacheWriter *writer, uint32_t *bytes_written
     if (writer->failed) {
         return false;
     }
+    if (!flush_writer(writer)) {
+        return false;
+    }
     sort_cache_index(writer->index, writer->count);
     uint32_t index_offset = writer->offset;
+    writer->buffer_offset = index_offset;
     for (uint32_t index = 0; index < writer->count; index++) {
         uint8_t entry[TRACK_CACHE_INDEX_ENTRY_SIZE];
         put32(entry, writer->index[index].path_hash);
         put32(entry + 4, writer->index[index].offset);
-        if (!writer->sink.write(writer->sink.context,
-                                index_offset + index * TRACK_CACHE_INDEX_ENTRY_SIZE, entry,
-                                sizeof entry)) {
+        if (!writer_append(writer, entry, sizeof entry)) {
             writer->failed = true;
             return false;
         }
+    }
+    if (!flush_writer(writer)) {
+        return false;
     }
     uint32_t total_size = index_offset + writer->count * TRACK_CACHE_INDEX_ENTRY_SIZE;
     uint8_t header[TRACK_CACHE_HEADER_SIZE] = {0};

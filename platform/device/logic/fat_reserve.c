@@ -96,6 +96,7 @@ static FatReserveResult step(FatVolume *volume, FatFile *directory, const FatNew
 
 FatReserveResult fat_reserve(FatVolume *volume, const char *path, uint32_t size)
 {
+    volume->parent_len = 0;
     if (size == 0 || volume->device.write == NULL) {
         return FAT_RESERVE_FAILED;
     }

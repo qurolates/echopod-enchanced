@@ -81,8 +81,13 @@ void hal_file_close(HalFile *file)
     file->handle = -1;
 }
 
+static char write_path[64];
+static FatFile write_file;
+static bool write_cached;
+
 bool hal_file_write(const char *path, const void *bytes, uint32_t length)
 {
+    write_cached = false;
     FatFile file;
     if (!mounted() || !fat_open(&volume, path, &file)) {
         return false;
@@ -95,12 +100,35 @@ bool hal_file_write(const char *path, const void *bytes, uint32_t length)
 
 bool hal_file_write_at(const char *path, uint32_t offset, const void *bytes, uint32_t length)
 {
-    FatFile file;
-    if (!mounted() || !fat_open(&volume, path, &file)) {
+    if (!mounted()) {
         return false;
     }
+    bool match = write_cached;
+    if (match) {
+        size_t index = 0;
+        for (; path[index] != '\0' && write_path[index] != '\0'; index++) {
+            if (path[index] != write_path[index]) {
+                match = false;
+                break;
+            }
+        }
+        match = match && path[index] == '\0' && write_path[index] == '\0';
+    }
+    if (!match) {
+        if (!fat_open(&volume, path, &write_file)) {
+            write_cached = false;
+            return false;
+        }
+        size_t len = 0;
+        while (path[len] != '\0' && len + 1 < sizeof write_path) {
+            write_path[len] = path[len];
+            len++;
+        }
+        write_path[len] = '\0';
+        write_cached = path[len] == '\0';
+    }
     board_start_record_step(HAL_START_STEP_CARD_WRITE);
-    bool written = fat_write(&volume, &file, offset, bytes, length);
+    bool written = fat_write(&volume, &write_file, offset, bytes, length);
     board_start_record_step_done();
     return written;
 }
@@ -130,6 +158,7 @@ static HalReserveResult reserve_result(FatReserveResult result)
 
 HalReserveResult hal_file_reserve(const char *path, uint32_t size)
 {
+    write_cached = false;
     if (!mounted()) {
         return HAL_RESERVE_FAILED;
     }
@@ -144,6 +173,7 @@ HalReserveResult hal_file_reserve(const char *path, uint32_t size)
 
 void storage_reset(void)
 {
+    write_cached = false;
     mount_state = MOUNT_NOT_TRIED;
     for (int slot = 0; slot < OPEN_FILE_CAPACITY; slot++) {
         in_use[slot] = false;

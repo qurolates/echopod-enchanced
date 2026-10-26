@@ -153,6 +153,7 @@ static void promote_cache(void)
         hal_file_close(&tmp);
         return;
     }
+    (void)hal_file_reserve(CACHE_STORE_PATH, 4 * 1024 * 1024);
     uint8_t zero[32] = {0};
     hal_file_write_at(CACHE_STORE_PATH, 0, zero, sizeof zero);
     uint8_t buffer[512];
@@ -277,6 +278,10 @@ RescanOutcome library_rescan_run(RescanProgress progress)
     uint32_t listing_size = 0;
     void *listing = memory != NULL ? hal_system_borrow_listing(&listing_size) : NULL;
     uint32_t cache_capacity = reserved_size_of(CACHE_TMP_PATH);
+    if (cache_capacity == 0) {
+        (void)hal_file_reserve(CACHE_TMP_PATH, 4 * 1024 * 1024);
+        cache_capacity = reserved_size_of(CACHE_TMP_PATH);
+    }
     bool has_cache = hal_file_open(&files.cache, CACHE_STORE_PATH);
     uint32_t cache_size = has_cache ? files.cache.size : 0;
     ScanJob job = {

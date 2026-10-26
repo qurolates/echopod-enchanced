@@ -54,6 +54,10 @@ typedef struct TrackCacheReader {
     uint32_t index_capacity;
 } TrackCacheReader;
 
+enum {
+    TRACK_CACHE_WRITE_BUFFER = 2048
+};
+
 typedef struct TrackCacheWriter {
     ByteSink sink;
     uint32_t capacity;
@@ -62,6 +66,9 @@ typedef struct TrackCacheWriter {
     TrackCacheIndexEntry *index;
     uint32_t index_capacity;
     bool failed;
+    uint32_t buffer_offset;
+    uint32_t buffer_used;
+    uint8_t buffer[TRACK_CACHE_WRITE_BUFFER];
 } TrackCacheWriter;
 
 bool track_cache_open(TrackCacheReader *reader, ByteSource source, uint32_t size,

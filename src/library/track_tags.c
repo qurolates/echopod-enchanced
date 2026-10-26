@@ -297,7 +297,7 @@ static bool read_format(TagReader *reader, TagFormat format)
 }
 
 enum {
-    TAG_BUFFER_SIZE = 512
+    TAG_BUFFER_SIZE = 2048
 };
 
 typedef struct BufferedSource {

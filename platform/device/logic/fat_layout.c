@@ -85,7 +85,15 @@ bool fat_commit_sector(FatVolume *volume, uint32_t lba)
 bool fat_update_bytes(FatVolume *volume, uint32_t lba, uint32_t within, const uint8_t *bytes,
                       uint32_t length)
 {
-    uint8_t *sector = fat_sector_for_update(volume, lba);
+    uint8_t *sector = NULL;
+    if (within == 0 && length == FAT_SECTOR_SIZE) {
+        volume->cache_lba = lba;
+        volume->cache_index = 0;
+        volume->cache_count = 1;
+        sector = (uint8_t *)volume->cache;
+    } else {
+        sector = fat_sector_for_update(volume, lba);
+    }
     if (sector == NULL) {
         return false;
     }
@@ -321,11 +329,19 @@ uint32_t fat_run_length(FatVolume *volume, FatFile *file, uint32_t sector_index,
 const uint8_t *fat_read_entry(FatVolume *volume, FatFile *directory, uint32_t index)
 {
     uint32_t offset = index * DIRECTORY_ENTRY_SIZE;
+    uint32_t sector_index = offset / FAT_SECTOR_SIZE;
     uint32_t lba = 0;
-    if (offset >= directory->size ||
-        !fat_file_sector(volume, directory, offset / FAT_SECTOR_SIZE, &lba) ||
-        !fat_read_sector(volume, lba)) {
+    if (offset >= directory->size || !fat_file_sector(volume, directory, sector_index, &lba)) {
         return NULL;
+    }
+    if (!fat_sector_cached(volume, lba)) {
+        uint32_t last_sector = (directory->size - 1) / FAT_SECTOR_SIZE;
+        uint32_t ahead = last_sector >= sector_index ? last_sector - sector_index + 1 : 1;
+        uint32_t run = fat_run_length(volume, directory, sector_index,
+                                      ahead < FAT_CACHE_SECTORS ? ahead : FAT_CACHE_SECTORS);
+        if (run == 0 || !fat_read_run(volume, lba, run)) {
+            return NULL;
+        }
     }
     return fat_cached_sector(volume) + offset % FAT_SECTOR_SIZE;
 }
