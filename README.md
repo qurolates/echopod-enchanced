@@ -162,6 +162,9 @@ mkdir -p build/system
 
 ## Credits & License
 
+- **EchoPod Enhanced Fork:**
+  - **[@qurolates](https://github.com/qurolates)** — Creator and maintainer.
+  - **Antigravity by Google DeepMind** — AI pair programmer (AAC-LC and Ogg Opus dual-core codecs, multilingual Unicode fonts, boot power logic).
 - **EchoPod Core & UI:** GPL-3.0-or-later. Original project created by [Basil Joy](https://github.com/BasilSkyWalk/echopod).
 - **Reverse Engineering & Hardware Research:** Built upon findings from the [ReChord](https://github.com/brnomt/ReChord) project (`docs/hardware.md`, `CREDITS.md`).
 - **libopus:** BSD-3-Clause (Xiph.Org Foundation, Skype Technologies SA).
