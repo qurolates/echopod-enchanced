@@ -3,7 +3,8 @@
 #include "core/hash.h"
 
 enum {
-    VERSION = 2,
+    VERSION = 3,
+    SECOND_VERSION = 2,
     FIRST_VERSION = 1,
     MAGIC_SIZE = 4,
     VERSION_FIELD = 4,
@@ -16,7 +17,12 @@ enum {
     REPEAT_FIELD = 12,
     VOLUME_FIELD = 13,
     AUTO_OFF_FIELD = 14,
-    CHECKSUM_FIELD = 20,
+    EQ_ENABLED_FIELD = 15,
+    EQ_PRESET_FIELD = 16,
+    EQ_GAINS_FIELD = 17,
+    LEGACY_CHECKSUM_FIELD = 20,
+    LEGACY_FILE_SIZE = 24,
+    CHECKSUM_FIELD = 28,
     DEFAULT_BRIGHTNESS = 7,
     DEFAULT_TIMEOUT_OPTION = 2,
     DEFAULT_VOLUME = 12,
@@ -43,6 +49,9 @@ Settings settings_defaults(void)
         .repeat = REPEAT_OFF,
         .volume = DEFAULT_VOLUME,
         .auto_off = DEFAULT_AUTO_OFF_OPTION,
+        .eq_enabled = false,
+        .eq_preset = 0,
+        .eq_gains = {0, 0, 0, 0, 0},
     };
 }
 
@@ -71,9 +80,9 @@ uint32_t settings_auto_off_ms(const Settings *settings)
     return settings_auto_off_option_minutes(settings->auto_off) * MILLISECONDS_PER_MINUTE;
 }
 
-static uint32_t checksum_of(const uint8_t *bytes)
+static uint32_t checksum_of(const uint8_t *bytes, size_t length)
 {
-    return hash_update(HASH_START, bytes, CHECKSUM_FIELD);
+    return hash_update(HASH_START, bytes, length);
 }
 
 static void put_u32(uint8_t *bytes, int offset, uint32_t value)
@@ -107,10 +116,15 @@ void settings_encode(const Settings *settings, uint8_t *bytes)
     bytes[REPEAT_FIELD] = (uint8_t)settings->repeat;
     bytes[VOLUME_FIELD] = settings->volume;
     bytes[AUTO_OFF_FIELD] = settings->auto_off;
-    put_u32(bytes, CHECKSUM_FIELD, checksum_of(bytes));
+    bytes[EQ_ENABLED_FIELD] = settings->eq_enabled ? 1 : 0;
+    bytes[EQ_PRESET_FIELD] = settings->eq_preset;
+    for (int band = 0; band < EQ_BAND_COUNT; band++) {
+        bytes[EQ_GAINS_FIELD + band] = (uint8_t)settings->eq_gains[band];
+    }
+    put_u32(bytes, CHECKSUM_FIELD, checksum_of(bytes, CHECKSUM_FIELD));
 }
 
-static bool header_valid(const uint8_t *bytes)
+static bool header_valid(const uint8_t *bytes, uint32_t length)
 {
     for (int index = 0; index < MAGIC_SIZE; index++) {
         if (bytes[index] != MAGIC[index]) {
@@ -118,27 +132,49 @@ static bool header_valid(const uint8_t *bytes)
         }
     }
     uint8_t version = bytes[VERSION_FIELD];
-    return (version == VERSION || version == FIRST_VERSION) && bytes[VERSION_FIELD + 1] == 0 &&
-           get_u32(bytes, CHECKSUM_FIELD) == checksum_of(bytes);
+    if (bytes[VERSION_FIELD + 1] != 0) {
+        return false;
+    }
+    if (version == VERSION && length >= SETTINGS_FILE_SIZE) {
+        return get_u32(bytes, CHECKSUM_FIELD) == checksum_of(bytes, CHECKSUM_FIELD);
+    }
+    if ((version == SECOND_VERSION || version == FIRST_VERSION) && length >= LEGACY_FILE_SIZE) {
+        return get_u32(bytes, LEGACY_CHECKSUM_FIELD) == checksum_of(bytes, LEGACY_CHECKSUM_FIELD);
+    }
+    return false;
 }
 
 static bool values_valid(const uint8_t *bytes)
 {
-    return bytes[BRIGHTNESS_FIELD] >= SETTINGS_BRIGHTNESS_MIN &&
-           bytes[BRIGHTNESS_FIELD] <= SETTINGS_BRIGHTNESS_MAX &&
-           bytes[TIMEOUT_FIELD] < SCREEN_TIMEOUT_OPTION_COUNT &&
-           bytes[GAIN_FIELD] < GAIN_LEVEL_COUNT && bytes[OUTPUT_FIELD] < OUTPUT_JACK_COUNT &&
-           bytes[START_FIELD] < START_SCREEN_COUNT && bytes[SHUFFLE_FIELD] < SHUFFLE_MODE_COUNT &&
-           bytes[REPEAT_FIELD] < REPEAT_MODE_COUNT && bytes[VOLUME_FIELD] <= SETTINGS_VOLUME_MAX &&
-           bytes[AUTO_OFF_FIELD] < AUTO_OFF_OPTION_COUNT;
+    if (bytes[BRIGHTNESS_FIELD] < SETTINGS_BRIGHTNESS_MIN ||
+        bytes[BRIGHTNESS_FIELD] > SETTINGS_BRIGHTNESS_MAX ||
+        bytes[TIMEOUT_FIELD] >= SCREEN_TIMEOUT_OPTION_COUNT ||
+        bytes[GAIN_FIELD] >= GAIN_LEVEL_COUNT || bytes[OUTPUT_FIELD] >= OUTPUT_JACK_COUNT ||
+        bytes[START_FIELD] >= START_SCREEN_COUNT || bytes[SHUFFLE_FIELD] >= SHUFFLE_MODE_COUNT ||
+        bytes[REPEAT_FIELD] >= REPEAT_MODE_COUNT || bytes[VOLUME_FIELD] > SETTINGS_VOLUME_MAX ||
+        bytes[AUTO_OFF_FIELD] >= AUTO_OFF_OPTION_COUNT) {
+        return false;
+    }
+    if (bytes[VERSION_FIELD] == VERSION) {
+        if (bytes[EQ_PRESET_FIELD] > EQ_PRESET_CUSTOM) {
+            return false;
+        }
+        for (int band = 0; band < EQ_BAND_COUNT; band++) {
+            int8_t gain = (int8_t)bytes[EQ_GAINS_FIELD + band];
+            if (gain < EQ_GAIN_MIN || gain > EQ_GAIN_MAX) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
 {
-    if (length < SETTINGS_FILE_SIZE || !header_valid(bytes) || !values_valid(bytes)) {
+    if (!header_valid(bytes, length) || !values_valid(bytes)) {
         return false;
     }
-    *settings = (Settings){
+    Settings result = {
         .brightness = bytes[BRIGHTNESS_FIELD],
         .screen_timeout = bytes[TIMEOUT_FIELD],
         .gain = (GainLevel)bytes[GAIN_FIELD],
@@ -149,6 +185,14 @@ bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
         .volume = bytes[VOLUME_FIELD],
         .auto_off = bytes[VERSION_FIELD] == FIRST_VERSION ? (uint8_t)DEFAULT_AUTO_OFF_OPTION
                                                           : bytes[AUTO_OFF_FIELD],
+        .eq_enabled = bytes[VERSION_FIELD] == VERSION ? bytes[EQ_ENABLED_FIELD] != 0 : false,
+        .eq_preset = bytes[VERSION_FIELD] == VERSION ? bytes[EQ_PRESET_FIELD] : 0,
     };
+    if (bytes[VERSION_FIELD] == VERSION) {
+        for (int band = 0; band < EQ_BAND_COUNT; band++) {
+            result.eq_gains[band] = (int8_t)bytes[EQ_GAINS_FIELD + band];
+        }
+    }
+    *settings = result;
     return true;
 }

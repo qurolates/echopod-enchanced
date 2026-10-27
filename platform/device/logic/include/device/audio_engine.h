@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "codec/flac.h"
+#include "core/eq.h"
 
 enum {
     AUDIO_ENGINE_PATH_CAPACITY = 256,
@@ -119,10 +120,12 @@ typedef struct AudioEngine {
     uint32_t gain;
     AudioEngineStats stats;
     AudioRefusal refusal;
+    Eq eq;
 } AudioEngine;
 
 void audio_engine_init(AudioEngine *engine, AudioEngineConfig config);
 void audio_engine_set_volume(AudioEngine *engine, uint8_t level);
+void audio_engine_set_eq(AudioEngine *engine, bool enabled, const int8_t *gains);
 bool audio_engine_play(AudioEngine *engine, const char *path, uint32_t start_ms, uint32_t token);
 const char *audio_engine_current_path(const AudioEngine *engine);
 void audio_engine_queue_next(AudioEngine *engine, const char *path, uint32_t token);

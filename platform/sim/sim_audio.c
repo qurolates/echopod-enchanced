@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <math.h>
 
+#include "core/eq.h"
 #include "hal/audio.h"
 #include "sim_decoder.h"
 #include "sim_storage.h"
@@ -38,6 +39,7 @@ typedef struct SimAudio {
     float gain;
     HalAudioGain analog_gain;
     HalAudioOutput output;
+    Eq eq;
 } SimAudio;
 
 static SimAudio audio;
@@ -79,6 +81,7 @@ static bool open_track(SimTrack *track, const char *path, uint32_t token)
 {
     char host_path[HOST_PATH_CAPACITY];
     close_track(track);
+    eq_reset(&audio.eq);
     track->token = token;
     track->open = sim_storage_host_path(path, host_path, sizeof host_path) &&
                   sim_decoder_open(&track->decoder, host_path);
@@ -90,6 +93,7 @@ static void use_stream_rate(uint32_t rate)
     if (audio.virtual_output || (audio.stream != NULL && audio.stream_rate == rate)) {
         return;
     }
+    eq_set_sample_rate(&audio.eq, rate);
     if (audio.stream != NULL) {
         SDL_FreeAudioStream(audio.stream);
     }
@@ -126,8 +130,13 @@ static bool decode_chunk(void)
     if (frames == 0) {
         return switch_to_next();
     }
-    for (uint64_t sample = 0; sample < frames * STEREO; sample++) {
-        chunk[sample] *= audio.gain;
+    eq_step_gains(&audio.eq);
+    for (uint64_t sample = 0; sample < frames; sample++) {
+        int32_t left = (int32_t)(chunk[sample * STEREO] * 8388607.0f);
+        int32_t right = (int32_t)(chunk[sample * STEREO + 1] * 8388607.0f);
+        eq_process_frame(&audio.eq, &left, &right);
+        chunk[sample * STEREO] = (float)left / 8388607.0f * audio.gain;
+        chunk[sample * STEREO + 1] = (float)right / 8388607.0f * audio.gain;
     }
     SDL_AudioStreamPut(audio.stream, chunk, (int)(frames * BYTES_PER_FRAME));
     return true;
@@ -182,6 +191,7 @@ static bool open_device(void)
 bool sim_audio_start(bool virtual_output)
 {
     SDL_memset(&audio, 0, sizeof audio);
+    eq_init(&audio.eq);
     audio.virtual_output = virtual_output;
     audio.gain = 1.0f;
     audio.state = HAL_AUDIO_STOPPED;
@@ -297,6 +307,14 @@ void hal_audio_set_output(HalAudioOutput output)
 {
     lock();
     audio.output = output;
+    unlock();
+}
+
+void hal_audio_set_eq(bool enabled, const int8_t *gains)
+{
+    lock();
+    eq_set_enabled(&audio.eq, enabled);
+    eq_set_gains(&audio.eq, gains);
     unlock();
 }
 

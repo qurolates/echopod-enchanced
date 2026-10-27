@@ -473,6 +473,20 @@ static void a_frame_is_released_once_its_samples_are_in_the_ring(void)
     CHECK_EQUAL(1, scripted.closes);
 }
 
+static void eq_modifies_samples_when_enabled(void)
+{
+    start_engine();
+    const int8_t boost[EQ_BAND_COUNT] = {12, 12, 12, 12, 12};
+    audio_engine_set_eq(&engine, true, boost);
+    CHECK(audio_engine_play(&engine, "lpc_16_44k_stereo", 0, 1));
+    pump_until_full(0);
+    Fixture pcm = load("lpc_16_44k_stereo", "pcm");
+    int32_t raw = expected_at(&pcm, 2 * 1000);
+    int32_t processed = sixteen_bit_left(1000);
+    CHECK(raw != processed);
+    free(pcm.bytes);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -493,6 +507,7 @@ int main(void)
         TEST_CASE(starting_part_way_skips_to_that_sample),
         TEST_CASE(seeking_restarts_the_ring_at_the_new_place),
         TEST_CASE(volume_scales_the_samples),
+        TEST_CASE(eq_modifies_samples_when_enabled),
         TEST_CASE(mono_plays_on_both_channels),
         TEST_CASE(an_unsupported_rate_is_refused),
         TEST_CASE(rates_up_to_192_khz_play_and_higher_ones_are_refused),

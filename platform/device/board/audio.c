@@ -498,6 +498,11 @@ void hal_audio_set_output(HalAudioOutput output)
     apply_volume();
 }
 
+void hal_audio_set_eq(bool enabled, const int8_t *gains)
+{
+    audio_engine_set_eq(&engine, enabled, gains);
+}
+
 static HalAudioState state_of(AudioEngineState state)
 {
     switch (state) {

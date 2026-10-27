@@ -6,7 +6,10 @@ enum {
     VERSION_FIELD = 4,
     BRIGHTNESS_FIELD = 6,
     AUTO_OFF_FIELD = 14,
-    CHECKSUM_FIELD = 20,
+    EQ_PRESET_FIELD = 16,
+    LEGACY_CHECKSUM_FIELD = 20,
+    LEGACY_FILE_SIZE = 24,
+    CHECKSUM_FIELD = 28,
     NEVER_OPTION = 6
 };
 
@@ -22,14 +25,21 @@ static Settings custom_settings(void)
     settings.repeat = REPEAT_ONE;
     settings.volume = 42;
     settings.auto_off = 3;
+    settings.eq_enabled = true;
+    settings.eq_preset = 5;
+    settings.eq_gains[0] = 3;
+    settings.eq_gains[1] = 1;
+    settings.eq_gains[2] = -1;
+    settings.eq_gains[3] = 2;
+    settings.eq_gains[4] = 2;
     return settings;
 }
 
-static void rewrite_checksum(uint8_t *bytes)
+static void rewrite_checksum(uint8_t *bytes, size_t checksum_offset)
 {
-    uint32_t checksum = hash_update(HASH_START, bytes, CHECKSUM_FIELD);
-    for (int index = 0; index < 4; index++) {
-        bytes[CHECKSUM_FIELD + index] = (uint8_t)(checksum >> (8 * index));
+    uint32_t checksum = hash_update(HASH_START, bytes, checksum_offset);
+    for (size_t index = 0; index < 4; index++) {
+        bytes[checksum_offset + index] = (uint8_t)(checksum >> (8 * index));
     }
 }
 
@@ -45,6 +55,11 @@ static void defaults_are_comfortable(void)
     CHECK_EQUAL(REPEAT_OFF, settings.repeat);
     CHECK_EQUAL(12, settings.volume);
     CHECK_EQUAL(5u * 60000u, settings_auto_off_ms(&settings));
+    CHECK(!settings.eq_enabled);
+    CHECK_EQUAL(0, settings.eq_preset);
+    for (int band = 0; band < EQ_BAND_COUNT; band++) {
+        CHECK_EQUAL(0, settings.eq_gains[band]);
+    }
 }
 
 static void auto_off_options_are_stocks(void)
@@ -62,11 +77,29 @@ static void a_version_one_file_keeps_its_values_and_gets_the_default_auto_off(vo
     settings_encode(&settings, bytes);
     bytes[VERSION_FIELD] = 1;
     bytes[AUTO_OFF_FIELD] = 0;
-    rewrite_checksum(bytes);
+    rewrite_checksum(bytes, LEGACY_CHECKSUM_FIELD);
     Settings decoded;
-    CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+    CHECK(settings_decode(bytes, LEGACY_FILE_SIZE, &decoded));
     CHECK_EQUAL(42, decoded.volume);
     CHECK_EQUAL(settings_defaults().auto_off, decoded.auto_off);
+    CHECK(!decoded.eq_enabled);
+    CHECK_EQUAL(0, decoded.eq_preset);
+}
+
+static void a_version_two_file_keeps_its_values_and_gets_default_eq(void)
+{
+    Settings settings = custom_settings();
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    bytes[VERSION_FIELD] = 2;
+    bytes[AUTO_OFF_FIELD] = 2;
+    rewrite_checksum(bytes, LEGACY_CHECKSUM_FIELD);
+    Settings decoded;
+    CHECK(settings_decode(bytes, LEGACY_FILE_SIZE, &decoded));
+    CHECK_EQUAL(42, decoded.volume);
+    CHECK_EQUAL(2, decoded.auto_off);
+    CHECK(!decoded.eq_enabled);
+    CHECK_EQUAL(0, decoded.eq_preset);
 }
 
 static void timeout_options_end_with_never(void)
@@ -102,6 +135,11 @@ static void settings_survive_a_round_trip(void)
     CHECK_EQUAL(original.repeat, decoded.repeat);
     CHECK_EQUAL(original.volume, decoded.volume);
     CHECK_EQUAL(original.auto_off, decoded.auto_off);
+    CHECK_EQUAL(original.eq_enabled, decoded.eq_enabled);
+    CHECK_EQUAL(original.eq_preset, decoded.eq_preset);
+    for (int band = 0; band < EQ_BAND_COUNT; band++) {
+        CHECK_EQUAL(original.eq_gains[band], decoded.eq_gains[band]);
+    }
 }
 
 static void a_corrupted_file_is_rejected(void)
@@ -120,7 +158,12 @@ static void out_of_range_values_are_rejected(void)
     uint8_t bytes[SETTINGS_FILE_SIZE];
     settings_encode(&settings, bytes);
     bytes[BRIGHTNESS_FIELD] = SETTINGS_BRIGHTNESS_MAX + 1;
-    rewrite_checksum(bytes);
+    rewrite_checksum(bytes, CHECKSUM_FIELD);
+    CHECK(!settings_decode(bytes, sizeof bytes, &settings));
+
+    settings_encode(&settings, bytes);
+    bytes[EQ_PRESET_FIELD] = EQ_PRESET_CUSTOM + 1;
+    rewrite_checksum(bytes, CHECKSUM_FIELD);
     CHECK(!settings_decode(bytes, sizeof bytes, &settings));
 }
 
@@ -135,6 +178,7 @@ int main(void)
         TEST_CASE(out_of_range_values_are_rejected),
         TEST_CASE(auto_off_options_are_stocks),
         TEST_CASE(a_version_one_file_keeps_its_values_and_gets_the_default_auto_off),
+        TEST_CASE(a_version_two_file_keeps_its_values_and_gets_default_eq),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

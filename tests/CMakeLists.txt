@@ -14,6 +14,7 @@ function(echo_add_unit_test)
 endfunction()
 
 echo_add_unit_test(NAME test_deadline SOURCES core/test_deadline.c LIBRARIES echo_core)
+echo_add_unit_test(NAME test_eq SOURCES core/test_eq.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_frame_stats SOURCES core/test_frame_stats.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_key_tracker SOURCES core/test_key_tracker.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_utf8 SOURCES core/test_utf8.c LIBRARIES echo_core)
@@ -147,6 +148,11 @@ echo_add_unit_test(NAME test_browse_screen
 )
 echo_add_unit_test(NAME test_up_next_screen
     SOURCES app/test_up_next_screen.c app/fake_hal.c
+    LIBRARIES echo_app echo_library_fixtures
+    PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
+)
+echo_add_unit_test(NAME test_equalizer_screen
+    SOURCES app/test_equalizer_screen.c app/fake_hal.c
     LIBRARIES echo_app echo_library_fixtures
     PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
 )

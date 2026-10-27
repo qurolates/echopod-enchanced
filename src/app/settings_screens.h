@@ -4,6 +4,7 @@
 
 #include "core/power_policy.h"
 #include "player.h"
+#include "screens/equalizer_screen.h"
 #include "settings_store.h"
 #include "ui/choice_screen.h"
 #include "ui/menu_screen.h"
@@ -12,7 +13,7 @@
 
 enum {
     SETTINGS_CHOICE_COUNT = 9,
-    SETTINGS_ITEM_COUNT = SETTINGS_CHOICE_COUNT + 1
+    SETTINGS_ITEM_COUNT = SETTINGS_CHOICE_COUNT + 2
 };
 
 typedef struct SettingsContext {
@@ -44,6 +45,7 @@ struct SettingsScreens {
     const Theme *theme;
     MenuScreen menu;
     ChoiceScreen choice;
+    EqualizerScreen equalizer;
     SettingsEntry entries[SETTINGS_CHOICE_COUNT];
     MenuItem items[SETTINGS_ITEM_COUNT];
 };

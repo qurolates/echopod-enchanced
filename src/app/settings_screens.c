@@ -208,6 +208,23 @@ static const char *choice_value(const void *context)
                                                                  : "";
 }
 
+static ScreenAction open_equalizer(void *context)
+{
+    SettingsScreens *screens = context;
+    return screen_action_push(
+        equalizer_screen_init(&screens->equalizer, screens->context.store, screens->theme));
+}
+
+static const char *equalizer_value(const void *context)
+{
+    const SettingsScreens *screens = context;
+    const Settings *settings = &screens->context.store->settings;
+    if (!settings->eq_enabled) {
+        return "Off";
+    }
+    return eq_preset(settings->eq_preset)->name;
+}
+
 static ScreenAction request_rescan(void *context)
 {
     SettingsContext *settings = context;
@@ -223,6 +240,13 @@ Screen *settings_screens_init(SettingsScreens *screens, SettingsContext context,
     screens->theme = theme;
     screens->items[SETTINGS_CHOICE_COUNT] = (MenuItem){
         .label = "Rescan library", .select = request_rescan, .context = &screens->context};
+    screens->items[SETTINGS_CHOICE_COUNT + 1] = (MenuItem){
+        .label = "Equalizer",
+        .select = open_equalizer,
+        .context = screens,
+        .value = equalizer_value,
+        .opens = true,
+    };
     for (int index = 0; index < SETTINGS_CHOICE_COUNT; index++) {
         screens->entries[index] = (SettingsEntry){.choice = &CHOICES[index], .owner = screens};
         screens->items[index] = (MenuItem){.label = CHOICES[index].title,

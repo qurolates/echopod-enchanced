@@ -122,6 +122,7 @@ void hal_audio_seek(uint32_t position_ms);
 void hal_audio_set_volume(uint8_t level);
 void hal_audio_set_gain(HalAudioGain gain);
 void hal_audio_set_output(HalAudioOutput output);
+void hal_audio_set_eq(bool enabled, const int8_t *gains);
 HalAudioStatus hal_audio_status(void);
 HalAudioStats hal_audio_stats(void);
 void hal_audio_service(void);

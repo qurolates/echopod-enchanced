@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "core/eq.h"
 #include "playback/play_queue.h"
 
 typedef enum GainLevel {
@@ -36,7 +37,7 @@ enum {
     SCREEN_TIMEOUT_OPTION_COUNT = 7,
     SLEEP_TIMER_OPTION_COUNT = 7,
     AUTO_OFF_OPTION_COUNT = 4,
-    SETTINGS_FILE_SIZE = 24
+    SETTINGS_FILE_SIZE = 32
 };
 
 typedef struct Settings {
@@ -49,6 +50,9 @@ typedef struct Settings {
     RepeatMode repeat;
     uint8_t volume;
     uint8_t auto_off;
+    bool eq_enabled;
+    uint8_t eq_preset;
+    int8_t eq_gains[EQ_BAND_COUNT];
 } Settings;
 
 Settings settings_defaults(void);

@@ -36,6 +36,8 @@ typedef struct FakeAudio {
     int refused_plays;
     HalAudioJack jack;
     HalAudioRefusal refusal;
+    bool eq_enabled;
+    int8_t eq_gains[5];
 } FakeAudio;
 
 typedef struct WrittenFile {
@@ -481,6 +483,24 @@ int fake_hal_audio_gain(void)
 int fake_hal_audio_output(void)
 {
     return (int)fake.audio.output;
+}
+
+void hal_audio_set_eq(bool enabled, const int8_t *gains)
+{
+    fake.audio.eq_enabled = enabled;
+    for (int index = 0; index < 5; index++) {
+        fake.audio.eq_gains[index] = gains[index];
+    }
+}
+
+bool fake_hal_audio_eq_enabled(void)
+{
+    return fake.audio.eq_enabled;
+}
+
+const int8_t *fake_hal_audio_eq_gains(void)
+{
+    return fake.audio.eq_gains;
 }
 
 int fake_hal_test_tone_count(void)

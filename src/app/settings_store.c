@@ -85,4 +85,5 @@ void settings_store_apply_hardware(const Settings *settings)
     hal_display_set_brightness(settings->brightness);
     hal_audio_set_gain(HAL_GAINS[settings->gain]);
     hal_audio_set_output(HAL_OUTPUTS[settings->output]);
+    hal_audio_set_eq(settings->eq_enabled, settings->eq_gains);
 }
