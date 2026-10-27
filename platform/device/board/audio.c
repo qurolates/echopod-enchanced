@@ -83,6 +83,7 @@ static uint32_t last_jack_poll_ms;
 static HalAudioStats stats;
 static uint32_t read_us_pending;
 static uint32_t output_started_us;
+static void seek_to(uint32_t position_ms, bool paused);
 
 static bool read_file(void *context, uint32_t offset, void *buffer, uint32_t length)
 {
@@ -433,8 +434,10 @@ void hal_audio_resume(void)
     if (transferring) {
         dmac_resume();
         dac_path_set_muted(false);
+        audio_engine_resume(&engine);
+    } else {
+        seek_to(audio_engine_status(&engine).position_ms, false);
     }
-    audio_engine_resume(&engine);
 }
 
 static void seek_to(uint32_t position_ms, bool paused)
@@ -594,7 +597,8 @@ static void change_rate(void)
 
 static void shut_down_when_idle(void)
 {
-    if (audio_engine_status(&engine).state != AUDIO_ENGINE_STOPPED) {
+    AudioEngineState state = audio_engine_status(&engine).state;
+    if (state != AUDIO_ENGINE_STOPPED && state != AUDIO_ENGINE_PAUSED) {
         stopped_waiting = false;
         return;
     }

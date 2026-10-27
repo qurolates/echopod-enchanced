@@ -4,6 +4,7 @@
 #include "board.h"
 #include "device/battery_gauge.h"
 #include "device/boot_power.h"
+#include "hal/audio.h"
 #include "hal/clock.h"
 #include "hal/power.h"
 #include "hal/system.h"
@@ -16,7 +17,8 @@
 enum {
     START_CLOCK_MHZ = 96,
     HOST_WAIT_MS = 3000,
-    EMPTY_NOTICE_MS = 2000
+    EMPTY_NOTICE_MS = 2000,
+    FRAME_PERIOD_MS = 16
 };
 
 typedef enum UsbState {
@@ -140,11 +142,24 @@ void board_main(void)
     app_start();
     app_show_splash();
     board_stall_pause(false);
+    uint32_t frame_start_ms = hal_clock_milliseconds();
     for (;;) {
         board_stall_beat();
         app_step();
         board_display_service();
         check_usb();
-        sleep_while_dark();
+        if (board_display_lit()) {
+            while (board_display_lit() &&
+                   hal_clock_milliseconds() - frame_start_ms < FRAME_PERIOD_MS) {
+                __asm__ volatile("wfi" ::: "memory");
+                hal_audio_service();
+                board_display_service();
+                check_usb();
+            }
+            frame_start_ms = hal_clock_milliseconds();
+        } else {
+            sleep_while_dark();
+            frame_start_ms = hal_clock_milliseconds();
+        }
     }
 }
