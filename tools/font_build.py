@@ -77,8 +77,17 @@ def render_glyph(font, codepoint):
 def build_font(spec, ranges, assets_directory):
     path = assets_directory / spec["file"]
     font = load_font(path, spec["size"])
+    fallback_font = None
+    fallback_path = None
+    if "fallback" in spec:
+        fallback_path = assets_directory / spec["fallback"]
+        fallback_font = load_font(fallback_path, spec["size"])
     ascent, descent = font.getmetrics()
-    glyphs = [render_glyph(font, codepoint) for codepoint in covered_codepoints(path, ranges)]
+    primary_codepoints = set(covered_codepoints(path, ranges))
+    glyphs = [render_glyph(font, codepoint) for codepoint in sorted(primary_codepoints)]
+    if fallback_font is not None:
+        fallback_codepoints = set(covered_codepoints(fallback_path, ranges)) - primary_codepoints
+        glyphs.extend(render_glyph(fallback_font, codepoint) for codepoint in sorted(fallback_codepoints))
     cjk_box = next((glyph for glyph in glyphs if glyph.codepoint == 0x25A1), None)
     if cjk_box is not None and not any(glyph.codepoint == 0x3000 for glyph in glyphs):
         glyphs.append(empty_glyph(0x3000, cjk_box.advance))

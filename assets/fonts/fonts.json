@@ -108,17 +108,20 @@
   "fonts": [
     {
       "name": "inter_regular_12",
-      "file": "inter/Inter-Regular.ttf",
+      "file": "chicago/Chicago.ttf",
+      "fallback": "inter/Inter-Regular.ttf",
       "size": 12
     },
     {
       "name": "inter_regular_16",
-      "file": "inter/Inter-Regular.ttf",
+      "file": "chicago/Chicago.ttf",
+      "fallback": "inter/Inter-Regular.ttf",
       "size": 16
     },
     {
       "name": "inter_semibold_16",
-      "file": "inter/Inter-SemiBold.ttf",
+      "file": "chicago/Chicago.ttf",
+      "fallback": "inter/Inter-SemiBold.ttf",
       "size": 16
     }
   ]
