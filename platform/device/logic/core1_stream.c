@@ -23,13 +23,6 @@ static void observe(void)
     __atomic_thread_fence(__ATOMIC_ACQUIRE);
 }
 
-static void core1_notify(void)
-{
-#if defined(__arm__) || defined(__thumb__)
-    __asm__ volatile("sev" ::: "memory");
-#endif
-}
-
 static uint32_t smaller(uint32_t a, uint32_t b)
 {
     return a < b ? a : b;
@@ -267,7 +260,6 @@ static bool open_stream(void *context, const char *path, uint32_t start_ms, Audi
     publish();
     control->generation = next_generation(source);
     source->streaming = true;
-    core1_notify();
     return true;
 }
 
@@ -282,7 +274,6 @@ void core1_source_fill(Core1Source *source)
     observe();
     uint32_t target = smaller(released + source->region.ring_bytes, source->end_offset);
     uint32_t budget = source->fill_budget;
-    uint32_t previous_written = source->written;
     while (source->written < target && budget > 0) {
         uint32_t position = source->written % source->region.ring_bytes;
         uint32_t length = smaller(smaller(target - source->written, budget),
@@ -296,9 +287,6 @@ void core1_source_fill(Core1Source *source)
         budget -= length;
         publish();
         control->written = source->written;
-    }
-    if (source->written > previous_written) {
-        core1_notify();
     }
 }
 
@@ -345,7 +333,6 @@ static void release_frame(void *context)
     Core1Source *source = context;
     source->region.control->slots[source->slot].state = STREAM_SLOT_EMPTY;
     source->slot = (source->slot + 1) % STREAM_SLOTS;
-    core1_notify();
 }
 
 static void close_stream(void *context)

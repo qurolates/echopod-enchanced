@@ -12,11 +12,6 @@
 
 #define SYSTICK_ENABLE_CORE_CLOCK 0x5u
 
-enum {
-    SYSTICK_RELOAD_1MS = 100000 - 1,
-    SYSTICK_ENABLE_INTERRUPT_CORE_CLOCK = 0x7u
-};
-
 void core1_main(void);
 
 static FlacDecoder decoder;
@@ -24,20 +19,6 @@ static Core1Flac flac;
 static AccelHook accel_hook;
 static Core1Stream stream;
 static uint32_t input_bytes;
-
-static void start_systick_fallback(void)
-{
-    register_write(SYSTICK_CTRL, 0);
-    register_write(SYSTICK_RELOAD, SYSTICK_RELOAD_1MS);
-    register_write(SYSTICK_CURRENT, 0);
-    register_write(SYSTICK_CTRL, SYSTICK_ENABLE_INTERRUPT_CORE_CLOCK);
-}
-
-static void wait_for_work(void)
-{
-    register_write(SCB_ICSR, SCB_ICSR_PENDSTCLR);
-    __asm__ volatile("wfe" ::: "memory");
-}
 
 static void start_systick(void)
 {
@@ -190,10 +171,7 @@ void core1_main(void)
     }
     use_accelerator(register_read(CORE1_SHARED_ACCEL_CLASSES));
     core1_stream_init(&stream, core1_region(), core1_flac_decoder(&flac, &decoder));
-    start_systick_fallback();
     for (;;) {
-        if (!core1_stream_step(&stream)) {
-            wait_for_work();
-        }
+        core1_stream_step(&stream);
     }
 }

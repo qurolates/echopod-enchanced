@@ -734,10 +734,9 @@ void app_step(void)
     }
     if (!app.display_on) {
         use_wanted_clock();
-    } else {
-        toast_update(&app.toast, now_ms);
-        update_screen(now_ms);
     }
+    toast_update(&app.toast, now_ms);
+    update_screen(now_ms);
     frame_stats_record(&app.update_stats, hal_clock_microseconds() - started_us);
     if (app.display_on) {
         render_frame();

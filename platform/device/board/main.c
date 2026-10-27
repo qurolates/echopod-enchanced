@@ -4,7 +4,6 @@
 #include "board.h"
 #include "device/battery_gauge.h"
 #include "device/boot_power.h"
-#include "hal/audio.h"
 #include "hal/clock.h"
 #include "hal/power.h"
 #include "hal/system.h"
@@ -13,10 +12,6 @@
 #include "usb.h"
 #include "usb_report.h"
 #include "usb_session.h"
-
-#ifndef TARGET_FPS
-#define TARGET_FPS 30
-#endif
 
 enum {
     START_CLOCK_MHZ = 96,
@@ -118,12 +113,11 @@ static void switch_off_when_empty(uint32_t boot_millivolts)
     hal_power_off();
 }
 
-static uint32_t frame_period_step(uint32_t *fraction)
+static void sleep_while_dark(void)
 {
-    *fraction += 1000;
-    uint32_t period = *fraction / TARGET_FPS;
-    *fraction %= TARGET_FPS;
-    return period;
+    if (!board_display_lit()) {
+        __asm__ volatile("wfi" ::: "memory");
+    }
 }
 
 void board_main(void)
@@ -146,21 +140,11 @@ void board_main(void)
     app_start();
     app_show_splash();
     board_stall_pause(false);
-    uint32_t fraction = 0;
-    uint32_t frame_start_ms = hal_clock_milliseconds();
     for (;;) {
         board_stall_beat();
         app_step();
         board_display_service();
         check_usb();
-        uint32_t target_period = frame_period_step(&fraction);
-        while (hal_clock_milliseconds() - frame_start_ms < target_period) {
-            __asm__ volatile("wfi" ::: "memory");
-            hal_audio_service();
-            if (board_display_lit()) {
-                board_display_service();
-            }
-        }
-        frame_start_ms = hal_clock_milliseconds();
+        sleep_while_dark();
     }
 }

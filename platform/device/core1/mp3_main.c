@@ -11,25 +11,6 @@ static Mp3Decoder decoder;
 static Core1Mp3 mp3;
 static Core1Stream stream;
 
-enum {
-    SYSTICK_RELOAD_1MS = 100000 - 1,
-    SYSTICK_ENABLE_INTERRUPT_CORE_CLOCK = 0x7u
-};
-
-static void start_systick_fallback(void)
-{
-    register_write(SYSTICK_CTRL, 0);
-    register_write(SYSTICK_RELOAD, SYSTICK_RELOAD_1MS);
-    register_write(SYSTICK_CURRENT, 0);
-    register_write(SYSTICK_CTRL, SYSTICK_ENABLE_INTERRUPT_CORE_CLOCK);
-}
-
-static void wait_for_work(void)
-{
-    register_write(SCB_ICSR, SCB_ICSR_PENDSTCLR);
-    __asm__ volatile("wfe" ::: "memory");
-}
-
 void core1_main(void)
 {
     register_write(CORE1_SHARED_READY, CORE1_READY_MAGIC);
@@ -40,10 +21,7 @@ void core1_main(void)
         return;
     }
     core1_stream_init(&stream, core1_region(), core1_mp3_decoder(&mp3, &decoder));
-    start_systick_fallback();
     for (;;) {
-        if (!core1_stream_step(&stream)) {
-            wait_for_work();
-        }
+        core1_stream_step(&stream);
     }
 }

@@ -201,14 +201,6 @@ static int64_t floor_shift(int64_t value, int shift)
 
 static int32_t to_output(int32_t sample, int bits, uint32_t gain)
 {
-    if (gain == UNITY_GAIN) {
-        if (bits == OUTPUT_BITS) {
-            return sample;
-        }
-        if (bits == 16) {
-            return (int32_t)((uint32_t)sample << (OUTPUT_BITS - 16));
-        }
-    }
     int64_t value = (int64_t)sample * gain;
     int shift = GAIN_SHIFT;
     if (bits > OUTPUT_BITS) {
