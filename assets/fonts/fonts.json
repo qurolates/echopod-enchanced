@@ -108,19 +108,19 @@
   "fonts": [
     {
       "name": "inter_regular_12",
-      "file": "chicago/Chicago.ttf",
+      "file": "ibm_plex/IBMPlexSans-Regular.ttf",
       "fallback": "inter/Inter-Regular.ttf",
       "size": 12
     },
     {
       "name": "inter_regular_16",
-      "file": "chicago/Chicago.ttf",
+      "file": "ibm_plex/IBMPlexSans-Regular.ttf",
       "fallback": "inter/Inter-Regular.ttf",
       "size": 16
     },
     {
       "name": "inter_semibold_16",
-      "file": "chicago/Chicago.ttf",
+      "file": "ibm_plex/IBMPlexSans-SemiBold.ttf",
       "fallback": "inter/Inter-SemiBold.ttf",
       "size": 16
     }

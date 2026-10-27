@@ -35,10 +35,21 @@ static const CoverFlowLayout LAYOUT = {
     .fade_end = 2 * COVER_FLOW_ONE + COVER_FLOW_ONE / 2,
 };
 
-static const Color BACKDROP = COLOR_RGB(0, 0, 0);
-
 static const char STAR_PREFIX[] = "\xE2\x98\x85 ";
 static const char EMPTY_MESSAGE[] = "Nothing here";
+
+static int32_t abs_of(int32_t value)
+{
+    return value < 0 ? -value : value;
+}
+
+static bool is_dark(Color color)
+{
+    unsigned red = (color >> 11) & 0x1F;
+    unsigned green = (color >> 5) & 0x3F;
+    unsigned blue = color & 0x1F;
+    return (red * 2 + green + blue) < 32;
+}
 
 static int min_of(int first, int second)
 {
@@ -295,10 +306,12 @@ static void draw_cover(const CoverFlowScreen *flow, Canvas *canvas, int position
         image_draw_quad_lit(canvas, image, quad, light);
         uint32_t reflection_us = hal_clock_microseconds();
         draw_profile_add(DRAW_PART_COVERS, reflection_us - started_us);
-        QuadLight reflected = {(uint16_t)(light.left * REFLECTION_LIGHT / COLOR_LIGHT_FULL),
-                               (uint16_t)(light.right * REFLECTION_LIGHT / COLOR_LIGHT_FULL)};
-        image_draw_reflection(canvas, image, quad, reflected, REFLECTION_ROWS);
-        draw_profile_add(DRAW_PART_REFLECTIONS, hal_clock_microseconds() - reflection_us);
+        if (is_dark(flow->config.theme->colors.background)) {
+            QuadLight reflected = {(uint16_t)(light.left * REFLECTION_LIGHT / COLOR_LIGHT_FULL),
+                                   (uint16_t)(light.right * REFLECTION_LIGHT / COLOR_LIGHT_FULL)};
+            image_draw_reflection(canvas, image, quad, reflected, REFLECTION_ROWS);
+            draw_profile_add(DRAW_PART_REFLECTIONS, hal_clock_microseconds() - reflection_us);
+        }
     } else {
         image_fill_quad(canvas, quad, flow->config.theme->colors.divider);
     }
@@ -323,7 +336,12 @@ static void draw_text(const CoverFlowScreen *flow, Canvas *canvas)
     const Theme *theme = flow->config.theme;
     int padding = theme->metrics.padding;
     int width = theme->metrics.screen_width - 2 * padding;
-    TextStyle title = {.font = theme->fonts.title, .color = theme->colors.text};
+    int32_t delta = abs_of(flow->position - (int32_t)flow->target * COVER_FLOW_ONE);
+    Color title_color = delta == 0 ? theme->colors.text
+                                   : color_between(theme->colors.text, theme->colors.text_secondary,
+                                                   (int)(delta < COVER_FLOW_ONE ? delta : COVER_FLOW_ONE),
+                                                   COVER_FLOW_ONE);
+    TextStyle title = {.font = theme->fonts.title, .color = title_color};
     TextStyle artist = {.font = theme->fonts.body, .color = theme->colors.text_secondary};
     draw_line(flow, canvas, (Label){{padding, TITLE_TOP, width, LINE_HEIGHT}, flow->title}, title);
     draw_line(flow, canvas, (Label){{padding, ARTIST_TOP, width, LINE_HEIGHT}, flow->artist},
@@ -340,13 +358,20 @@ static void draw_empty(const Theme *theme, Canvas *canvas)
 
 static void draw_backdrop(const Theme *theme, Canvas *canvas)
 {
-    int floor = LAYOUT.center_top + LAYOUT.center_size;
-    int height = theme->metrics.screen_height;
-    canvas_fill_rect(canvas, (Rect){0, 0, theme->metrics.screen_width, floor}, BACKDROP);
-    for (int y = floor; y < height; y++) {
-        uint8_t level = (uint8_t)(FLOOR_LEVEL * (height - y) / (height - floor));
-        canvas_fill_rect(canvas, (Rect){0, y, theme->metrics.screen_width, 1},
-                         color_from_rgb(level, level, level));
+    if (is_dark(theme->colors.background)) {
+        int floor = LAYOUT.center_top + LAYOUT.center_size;
+        int height = theme->metrics.screen_height;
+        canvas_fill_rect(canvas, (Rect){0, 0, theme->metrics.screen_width, floor},
+                         theme->colors.background);
+        for (int y = floor; y < height; y++) {
+            uint8_t level = (uint8_t)(FLOOR_LEVEL * (height - y) / (height - floor));
+            canvas_fill_rect(canvas, (Rect){0, y, theme->metrics.screen_width, 1},
+                             color_from_rgb(level, level, level));
+        }
+    } else {
+        canvas_fill_rect(canvas,
+                         (Rect){0, 0, theme->metrics.screen_width, theme->metrics.screen_height},
+                         theme->colors.background);
     }
 }
 
