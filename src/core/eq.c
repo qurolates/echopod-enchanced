@@ -212,14 +212,15 @@ void eq_step_gains(Eq *eq)
 static int32_t process_biquad(int64_t *s1, int64_t *s2, const EqBiquadCoeffs *c, int32_t x)
 {
     int64_t y_q28 = (int64_t)c->b0 * x + *s1;
-    int32_t y = (int32_t)((y_q28 + ROUND_HALF_Q28) >> Q28_SHIFT);
-    if (y > SAMPLE_MAX) {
+    int64_t y_lin = (y_q28 + ROUND_HALF_Q28) >> Q28_SHIFT;
+    *s1 = (int64_t)c->b1 * x - (int64_t)c->a1 * y_lin + *s2;
+    *s2 = (int64_t)c->b2 * x - (int64_t)c->a2 * y_lin;
+    int32_t y = (int32_t)y_lin;
+    if (y_lin > SAMPLE_MAX) {
         y = SAMPLE_MAX;
-    } else if (y < SAMPLE_MIN) {
+    } else if (y_lin < SAMPLE_MIN) {
         y = SAMPLE_MIN;
     }
-    *s1 = (int64_t)c->b1 * x - (int64_t)c->a1 * y + *s2;
-    *s2 = (int64_t)c->b2 * x - (int64_t)c->a2 * y;
     return y;
 }
 

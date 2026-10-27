@@ -121,11 +121,14 @@ typedef struct AudioEngine {
     AudioEngineStats stats;
     AudioRefusal refusal;
     Eq eq;
+    bool dsp_bypass;
 } AudioEngine;
 
 void audio_engine_init(AudioEngine *engine, AudioEngineConfig config);
 void audio_engine_set_volume(AudioEngine *engine, uint8_t level);
 void audio_engine_set_eq(AudioEngine *engine, bool enabled, const int8_t *gains);
+void audio_engine_set_dsp_bypass(AudioEngine *engine, bool bypass);
+bool audio_engine_dsp_bypass(const AudioEngine *engine);
 bool audio_engine_play(AudioEngine *engine, const char *path, uint32_t start_ms, uint32_t token);
 const char *audio_engine_current_path(const AudioEngine *engine);
 void audio_engine_queue_next(AudioEngine *engine, const char *path, uint32_t token);

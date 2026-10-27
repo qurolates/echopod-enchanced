@@ -21,16 +21,14 @@ static void setup_screen(void)
 static void default_rows_and_labels(void)
 {
     setup_screen();
-    CHECK_EQUAL(8, eq_screen.model.count(eq_screen.model.context));
+    CHECK_EQUAL(7, eq_screen.model.count(eq_screen.model.context));
     CHECK(strcmp("Equalizer", eq_screen.model.label(eq_screen.model.context, 0)) == 0);
     CHECK(strcmp("Off", eq_screen.model.detail(eq_screen.model.context, 0)) == 0);
     CHECK(strcmp("Preset", eq_screen.model.label(eq_screen.model.context, 1)) == 0);
     CHECK(strcmp("Flat", eq_screen.model.detail(eq_screen.model.context, 1)) == 0);
-    CHECK(strcmp("Reset to Flat", eq_screen.model.label(eq_screen.model.context, 2)) == 0);
-    CHECK(eq_screen.model.detail(eq_screen.model.context, 2) == NULL);
-    CHECK(strcmp("100 Hz", eq_screen.model.label(eq_screen.model.context, 3)) == 0);
-    CHECK(strcmp("0 dB", eq_screen.model.detail(eq_screen.model.context, 3)) == 0);
-    CHECK(strcmp("10 kHz", eq_screen.model.label(eq_screen.model.context, 7)) == 0);
+    CHECK(strcmp("100 Hz", eq_screen.model.label(eq_screen.model.context, 2)) == 0);
+    CHECK(strcmp("0 dB", eq_screen.model.detail(eq_screen.model.context, 2)) == 0);
+    CHECK(strcmp("10 kHz", eq_screen.model.label(eq_screen.model.context, 6)) == 0);
 }
 
 static void toggling_equalizer_switches_state(void)
@@ -52,10 +50,10 @@ static void manual_adjustment_changes_gain_and_sets_custom(void)
 {
     setup_screen();
     KeyEvent down = {.key = KEY_VOLUME_UP, .gesture = KEY_GESTURE_PRESS};
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 2; step++) {
         screen->handle_key(screen->context, down, 10u + (uint32_t)step);
     }
-    CHECK_EQUAL(3, eq_screen.list.selected);
+    CHECK_EQUAL(2, eq_screen.list.selected);
 
     KeyEvent play = {.key = KEY_PLAY, .gesture = KEY_GESTURE_PRESS};
     screen->handle_key(screen->context, play, 50);
@@ -72,16 +70,18 @@ static void manual_adjustment_changes_gain_and_sets_custom(void)
     CHECK(strcmp("Custom", eq_screen.model.detail(eq_screen.model.context, 1)) == 0);
 }
 
-static void reset_to_flat_clears_all_gains(void)
+static void flat_preset_clears_all_gains(void)
 {
     setup_screen();
     store.settings.eq_gains[0] = 4;
     store.settings.eq_gains[1] = 2;
     store.settings.eq_preset = 5;
 
-    eq_screen.list.selected = 2;
+    eq_screen.list.selected = 1;
     KeyEvent play = {.key = KEY_PLAY, .gesture = KEY_GESTURE_PRESS};
     screen->handle_key(screen->context, play, 10);
+    eq_screen.preset_choice.config.choose(&eq_screen, 0);
+
     CHECK_EQUAL(0, store.settings.eq_preset);
     for (int band = 0; band < EQ_BAND_COUNT; band++) {
         CHECK_EQUAL(0, store.settings.eq_gains[band]);
@@ -120,7 +120,7 @@ int main(void)
         TEST_CASE(default_rows_and_labels),
         TEST_CASE(toggling_equalizer_switches_state),
         TEST_CASE(manual_adjustment_changes_gain_and_sets_custom),
-        TEST_CASE(reset_to_flat_clears_all_gains),
+        TEST_CASE(flat_preset_clears_all_gains),
         TEST_CASE(preset_choice_loads_preset_gains),
         TEST_CASE(draw_renders_without_crash),
     };

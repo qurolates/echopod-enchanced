@@ -40,6 +40,7 @@ typedef struct SimAudio {
     HalAudioGain analog_gain;
     HalAudioOutput output;
     Eq eq;
+    bool dsp_bypass;
 } SimAudio;
 
 static SimAudio audio;
@@ -130,11 +131,15 @@ static bool decode_chunk(void)
     if (frames == 0) {
         return switch_to_next();
     }
-    eq_step_gains(&audio.eq);
+    if (!audio.dsp_bypass) {
+        eq_step_gains(&audio.eq);
+    }
     for (uint64_t sample = 0; sample < frames; sample++) {
         int32_t left = (int32_t)(chunk[sample * STEREO] * 8388607.0f);
         int32_t right = (int32_t)(chunk[sample * STEREO + 1] * 8388607.0f);
-        eq_process_frame(&audio.eq, &left, &right);
+        if (!audio.dsp_bypass) {
+            eq_process_frame(&audio.eq, &left, &right);
+        }
         chunk[sample * STEREO] = (float)left / 8388607.0f * audio.gain;
         chunk[sample * STEREO + 1] = (float)right / 8388607.0f * audio.gain;
     }
@@ -316,6 +321,18 @@ void hal_audio_set_eq(bool enabled, const int8_t *gains)
     eq_set_enabled(&audio.eq, enabled);
     eq_set_gains(&audio.eq, gains);
     unlock();
+}
+
+void hal_audio_set_dsp_bypass(bool bypass)
+{
+    lock();
+    audio.dsp_bypass = bypass;
+    unlock();
+}
+
+bool hal_audio_dsp_bypass(void)
+{
+    return audio.dsp_bypass;
 }
 
 static bool dma_tone_running;

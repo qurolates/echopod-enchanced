@@ -48,6 +48,16 @@ void audio_engine_set_eq(AudioEngine *engine, bool enabled, const int8_t *gains)
     eq_set_gains(&engine->eq, gains);
 }
 
+void audio_engine_set_dsp_bypass(AudioEngine *engine, bool bypass)
+{
+    engine->dsp_bypass = bypass;
+}
+
+bool audio_engine_dsp_bypass(const AudioEngine *engine)
+{
+    return engine->dsp_bypass;
+}
+
 void audio_engine_set_volume(AudioEngine *engine, uint8_t level)
 {
     if (level == 0) {
@@ -250,12 +260,16 @@ static void copy_pending(AudioEngine *engine)
     const int32_t *left = engine->frame.left;
     const int32_t *right = engine->frame.right;
     int bits = engine->frame.bits;
-    eq_step_gains(&engine->eq);
+    if (!engine->dsp_bypass && engine->pending_offset == 0) {
+        eq_step_gains(&engine->eq);
+    }
     while (engine->pending_frames > 0 && free_space(engine) > 0) {
         uint32_t index = engine->pending_offset;
         int32_t l = to_output(left[index], bits, engine->gain);
         int32_t r = to_output(right[index], bits, engine->gain);
-        eq_process_frame(&engine->eq, &l, &r);
+        if (!engine->dsp_bypass) {
+            eq_process_frame(&engine->eq, &l, &r);
+        }
         write_frame(engine, l, r);
         engine->pending_offset++;
         engine->pending_frames--;

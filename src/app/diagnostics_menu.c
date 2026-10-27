@@ -312,6 +312,13 @@ static const char *dma_tone_value(const void *context)
     return text;
 }
 
+static ScreenAction toggle_dsp_bypass(void *context)
+{
+    (void)context;
+    hal_audio_set_dsp_bypass(!hal_audio_dsp_bypass());
+    return screen_action_none();
+}
+
 void diagnostics_menu_build(AppScreens *screens, AppOptions *options, const Theme *theme)
 {
     Screen *long_names = app_screens_build_menu(&screens->long_names, "Long names", LONG_NAME_ITEMS,
@@ -426,6 +433,20 @@ void diagnostics_menu_build(AppScreens *screens, AppOptions *options, const Them
         (MenuItem){.label = "USB RX TX", .select = NULL, .context = NULL, .value = usb_fifo_value};
     screens->diagnostics_items[32] = (MenuItem){
         .label = "Last USB", .select = NULL, .context = NULL, .value = diagnostics_row_usb_last};
+    screens->diagnostics_items[33] = (MenuItem){
+        .label = "Audio state", .select = NULL, .context = NULL, .value = diagnostics_row_audio_state};
+    screens->diagnostics_items[34] = (MenuItem){
+        .label = "Audio buf", .select = NULL, .context = NULL, .value = diagnostics_row_audio_buffer};
+    screens->diagnostics_items[35] = (MenuItem){
+        .label = "Audio pipe", .select = NULL, .context = NULL, .value = diagnostics_row_audio_pipeline};
+    screens->diagnostics_items[36] = (MenuItem){
+        .label = "DMA state", .select = NULL, .context = NULL, .value = diagnostics_row_dma_state};
+    screens->diagnostics_items[37] = (MenuItem){
+        .label = "DAC state", .select = NULL, .context = NULL, .value = diagnostics_row_dac_state};
+    screens->diagnostics_items[38] = (MenuItem){
+        .label = "DSP state", .select = NULL, .context = NULL, .value = diagnostics_row_dsp_state};
+    screens->diagnostics_items[39] = (MenuItem){
+        .label = "DSP bypass", .select = toggle_dsp_bypass, .context = NULL, .value = diagnostics_row_dsp_bypass};
     app_screens_build_menu(&screens->diagnostics, "Diagnostics", screens->diagnostics_items,
                            DIAGNOSTICS_ITEM_COUNT, theme);
 }

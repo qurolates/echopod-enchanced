@@ -21,9 +21,10 @@ typedef struct TransitionQueue {
 } TransitionQueue;
 
 static const KeyBinding KEY_BINDINGS[] = {
-    {SDLK_UP, KEY_VOLUME_DOWN}, {SDLK_DOWN, KEY_VOLUME_UP}, {SDLK_RETURN, KEY_PLAY},
-    {SDLK_SPACE, KEY_PLAY},     {SDLK_m, KEY_MENU},         {SDLK_TAB, KEY_MENU},
-    {SDLK_BACKSPACE, KEY_BACK}, {SDLK_ESCAPE, KEY_BACK},    {SDLK_p, KEY_POWER},
+    {SDLK_UP, KEY_VOLUME_DOWN},    {SDLK_DOWN, KEY_VOLUME_UP},  {SDLK_RETURN, KEY_PLAY},
+    {SDLK_LEFT, KEY_VOLUME_DOWN},  {SDLK_RIGHT, KEY_VOLUME_UP}, {SDLK_SPACE, KEY_PLAY},
+    {SDLK_m, KEY_MENU},            {SDLK_TAB, KEY_MENU},        {SDLK_BACKSPACE, KEY_BACK},
+    {SDLK_ESCAPE, KEY_BACK},       {SDLK_p, KEY_POWER},
 };
 
 static TransitionQueue queue;

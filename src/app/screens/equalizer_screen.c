@@ -11,7 +11,6 @@
 enum {
     ROW_ENABLED,
     ROW_PRESET,
-    ROW_FLAT,
     ROW_BAND_100,
     ROW_BAND_300,
     ROW_BAND_1K,
@@ -19,12 +18,12 @@ enum {
     ROW_BAND_10K,
     ROW_COUNT,
     PRESET_OPTION_COUNT = EQ_PRESET_COUNT + 1,
-    PANEL_WIDTH = 84,
-    PANEL_PAD = 4,
-    BAR_WIDTH = 10,
+    PANEL_WIDTH = 110,
+    PANEL_PAD = 6,
+    BAR_WIDTH = 14,
     BAR_GAP = 5,
-    BAR_MAX_HEIGHT = 44,
-    LABEL_HEIGHT = 16
+    BAR_MAX_HEIGHT = 40,
+    LABEL_HEIGHT = 14
 };
 
 static const char *const PRESET_OPTIONS[PRESET_OPTION_COUNT] = {
@@ -51,8 +50,6 @@ static const char *item_label(const void *context, int index)
         return "Equalizer";
     case ROW_PRESET:
         return "Preset";
-    case ROW_FLAT:
-        return "Reset to Flat";
     default:
         return eq_band_name(index - ROW_BAND_100);
     }
@@ -98,9 +95,6 @@ static const char *item_detail(const void *context, int index)
     }
     if (index == ROW_PRESET) {
         return eq_preset(settings->eq_preset)->name;
-    }
-    if (index == ROW_FLAT) {
-        return NULL;
     }
     int band = index - ROW_BAND_100;
     return screen->value_buffers[band];
@@ -160,15 +154,6 @@ static ScreenAction select_item(void *context, int index)
     }
     if (index == ROW_PRESET) {
         return open_presets(screen);
-    }
-    if (index == ROW_FLAT) {
-        settings->eq_preset = 0;
-        for (int band = 0; band < EQ_BAND_COUNT; band++) {
-            settings->eq_gains[band] = 0;
-        }
-        apply_eq(settings);
-        refresh_buffers(screen);
-        return screen_action_none();
     }
     screen->adjusting = true;
     refresh_buffers(screen);
@@ -240,18 +225,22 @@ static void update(void *context, uint32_t now_ms)
 
 static Color bar_color(const EqualizerScreen *screen, int band)
 {
+    if (!screen->store->settings.eq_enabled) {
+        return screen->theme->colors.text_tertiary;
+    }
     int selected_band = screen->list.selected - ROW_BAND_100;
     if (selected_band == band) {
-        return screen->adjusting ? screen->theme->colors.selection_top : screen->theme->colors.text;
+        return screen->adjusting ? screen->theme->colors.selection_top
+                                 : screen->theme->colors.selection_background;
     }
     return screen->theme->colors.text_secondary;
 }
 
-static void draw_bar(const EqualizerScreen *screen, Canvas *canvas, int band, Rect area, int y_mid)
+static void draw_bar(const EqualizerScreen *screen, Canvas *canvas, int band, int start_x, int y_mid)
 {
     int8_t gain = screen->store->settings.eq_gains[band];
     int height = (int8_t)(gain >= 0 ? gain : -gain) * BAR_MAX_HEIGHT / EQ_GAIN_MAX;
-    int x = area.x + band * (BAR_WIDTH + BAR_GAP);
+    int x = start_x + band * (BAR_WIDTH + BAR_GAP);
     Color color = bar_color(screen, band);
     if (gain > 0) {
         canvas_fill_rect(canvas, (Rect){x, y_mid - height, BAR_WIDTH, height}, color);
@@ -265,21 +254,24 @@ static void draw_bar(const EqualizerScreen *screen, Canvas *canvas, int band, Re
 static void draw_panel(const EqualizerScreen *screen, Canvas *canvas, Rect area)
 {
     const Theme *theme = screen->theme;
-    int y_mid = area.y + (area.height - LABEL_HEIGHT) / 2;
-    canvas_fill_rect(canvas, (Rect){area.x, y_mid, area.width, 1}, theme->colors.divider);
+    canvas_fill_rect(canvas, (Rect){area.x - PANEL_PAD, area.y, 1, area.height},
+                     theme->colors.divider);
     int total_width = EQ_BAND_COUNT * BAR_WIDTH + (EQ_BAND_COUNT - 1) * BAR_GAP;
     int start_x = area.x + (area.width - total_width) / 2;
-    Rect bars_area = {start_x, area.y, total_width, area.height - LABEL_HEIGHT};
+    int y_mid = area.y + (area.height - LABEL_HEIGHT - 10) / 2;
+    canvas_fill_rect(canvas, (Rect){start_x - 4, y_mid, total_width + 8, 1},
+                     theme->colors.divider);
     for (int band = 0; band < EQ_BAND_COUNT; band++) {
-        draw_bar(screen, canvas, band, bars_area, y_mid);
+        draw_bar(screen, canvas, band, start_x, y_mid);
     }
     static const char *const SHORT_NAMES[EQ_BAND_COUNT] = {"100", "300", "1k", "3k", "10k"};
     TextStyle style = {.font = theme->fonts.small, .color = theme->colors.text_secondary};
-    int label_y = area.y + area.height - LABEL_HEIGHT;
+    int label_y = y_mid + BAR_MAX_HEIGHT + 4;
     for (int band = 0; band < EQ_BAND_COUNT; band++) {
         int x = start_x + band * (BAR_WIDTH + BAR_GAP) - 3;
-        label_draw(canvas, style, (Label){.area = {x, label_y, BAR_WIDTH + 6, LABEL_HEIGHT},
-                                          .text = SHORT_NAMES[band]});
+        label_draw(canvas, style,
+                   (Label){.area = {x, label_y, BAR_WIDTH + 6, LABEL_HEIGHT},
+                           .text = SHORT_NAMES[band]});
     }
 }
 

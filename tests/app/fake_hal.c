@@ -493,6 +493,18 @@ void hal_audio_set_eq(bool enabled, const int8_t *gains)
     }
 }
 
+static bool fake_dsp_bypass;
+
+void hal_audio_set_dsp_bypass(bool bypass)
+{
+    fake_dsp_bypass = bypass;
+}
+
+bool hal_audio_dsp_bypass(void)
+{
+    return fake_dsp_bypass;
+}
+
 bool fake_hal_audio_eq_enabled(void)
 {
     return fake.audio.eq_enabled;

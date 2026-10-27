@@ -81,6 +81,7 @@ static bool volume_set;
 static HalAudioOutput output_setting;
 static uint32_t last_jack_poll_ms;
 static HalAudioStats stats;
+static bool dsp_bypass_enabled;
 static uint32_t read_us_pending;
 static uint32_t output_started_us;
 
@@ -500,7 +501,20 @@ void hal_audio_set_output(HalAudioOutput output)
 
 void hal_audio_set_eq(bool enabled, const int8_t *gains)
 {
+    ensure_engine();
     audio_engine_set_eq(&engine, enabled, gains);
+}
+
+void hal_audio_set_dsp_bypass(bool bypass)
+{
+    dsp_bypass_enabled = bypass;
+    ensure_engine();
+    audio_engine_set_dsp_bypass(&engine, bypass);
+}
+
+bool hal_audio_dsp_bypass(void)
+{
+    return dsp_bypass_enabled;
 }
 
 static HalAudioState state_of(AudioEngineState state)
@@ -647,10 +661,24 @@ void hal_audio_service(void)
 HalAudioStats hal_audio_stats(void)
 {
     HalAudioStats result = stats;
+    result.transferring = transferring;
+    result.dma_running = dmac_running();
+    result.dma_sar = dmac_source();
+    result.dac_volume = dac_path_applied_volume();
+    result.dac_muted = dac_path_is_muted();
+    result.dac_up = path_up;
+    result.dac_rate = path_rate;
+    result.dsp_bypass = dsp_bypass_enabled;
+    if (engine_ready) {
+        result.produced = engine.produced;
+        result.eq_enabled = engine.eq.enabled;
+        result.eq_flat = eq_is_flat(&engine.eq);
+        result.underruns = audio_engine_stats(&engine).underruns;
+    }
     if (!engine_ready || !transferring || tone_active) {
         return result;
     }
-    result.underruns = audio_engine_stats(&engine).underruns;
+    result.consumed = consumed;
     result.elapsed_us = hal_clock_microseconds() - output_started_us;
     uint32_t rate = audio_engine_rate(&engine);
     if (rate > 0) {

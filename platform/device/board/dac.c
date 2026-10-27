@@ -574,3 +574,13 @@ void dac_path_stop_transfer(void)
     register_write(I2S_XFER, 0);
     register_write(I2S_DMACR, 0);
 }
+
+uint8_t dac_path_applied_volume(void)
+{
+    return applied_volume;
+}
+
+bool dac_path_is_muted(void)
+{
+    return muted;
+}

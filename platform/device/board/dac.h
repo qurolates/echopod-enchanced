@@ -15,3 +15,5 @@ void dac_path_set_gain(bool high);
 bool dac_path_take_underrun(void);
 void dac_path_start_transfer(void);
 void dac_path_stop_transfer(void);
+uint8_t dac_path_applied_volume(void);
+bool dac_path_is_muted(void);
