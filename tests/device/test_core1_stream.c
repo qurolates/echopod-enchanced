@@ -237,12 +237,15 @@ static void core_1_waits_while_its_slots_are_full(void)
     }
     CHECK_EQUAL(STREAM_SLOT_FULL, control.slots[0].state);
     CHECK_EQUAL(STREAM_SLOT_FULL, control.slots[1].state);
+    CHECK(!core1_stream_step(&stream));
     CHECK_EQUAL(1152u, frame.samples);
     interface.release(interface.context);
     CHECK_EQUAL(STREAM_SLOT_EMPTY, control.slots[0].state);
+    CHECK(core1_stream_step(&stream));
     CHECK_EQUAL(AUDIO_FRAME_READY, next_frame(&frame));
     CHECK_EQUAL(1152u, frame.first_sample);
     interface.close(interface.context);
+    CHECK(!core1_stream_step(&stream));
 }
 
 static void reopening_part_way_drops_the_old_frames(void)

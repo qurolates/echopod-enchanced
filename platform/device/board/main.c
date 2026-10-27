@@ -115,13 +115,6 @@ static void switch_off_when_empty(uint32_t boot_millivolts)
     hal_power_off();
 }
 
-static void sleep_while_dark(void)
-{
-    if (!board_display_lit()) {
-        __asm__ volatile("wfi" ::: "memory");
-    }
-}
-
 void board_main(void)
 {
     board_start_record_boot();
@@ -148,18 +141,13 @@ void board_main(void)
         app_step();
         board_display_service();
         check_usb();
-        if (board_display_lit()) {
-            while (board_display_lit() &&
-                   hal_clock_milliseconds() - frame_start_ms < FRAME_PERIOD_MS) {
-                __asm__ volatile("wfi" ::: "memory");
-                hal_audio_service();
+        while (hal_clock_milliseconds() - frame_start_ms < FRAME_PERIOD_MS) {
+            __asm__ volatile("wfi" ::: "memory");
+            hal_audio_service();
+            if (board_display_lit()) {
                 board_display_service();
-                check_usb();
             }
-            frame_start_ms = hal_clock_milliseconds();
-        } else {
-            sleep_while_dark();
-            frame_start_ms = hal_clock_milliseconds();
         }
+        frame_start_ms = hal_clock_milliseconds();
     }
 }

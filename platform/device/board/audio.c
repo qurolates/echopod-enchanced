@@ -437,6 +437,7 @@ void hal_audio_resume(void)
         audio_engine_resume(&engine);
     } else {
         seek_to(audio_engine_status(&engine).position_ms, false);
+        audio_engine_resume(&engine);
     }
 }
 
