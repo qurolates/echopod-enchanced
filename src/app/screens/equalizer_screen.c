@@ -2,117 +2,161 @@
 
 #include <stddef.h>
 
-#include "core/string_builder.h"
 #include "hal/audio.h"
 #include "ui/header.h"
-#include "ui/label.h"
 #include "ui/list_navigation.h"
 
-enum {
-    ROW_ENABLED,
-    ROW_PRESET,
-    ROW_BAND_100,
-    ROW_BAND_300,
-    ROW_BAND_1K,
-    ROW_BAND_3K,
-    ROW_BAND_10K,
-    ROW_COUNT,
-    PRESET_OPTION_COUNT = EQ_PRESET_COUNT + 1,
-    PANEL_WIDTH = 110,
-    PANEL_PAD = 6,
-    BAR_WIDTH = 14,
-    BAR_GAP = 5,
-    BAR_MAX_HEIGHT = 40,
-    LABEL_HEIGHT = 14
-};
-
-static const char *const PRESET_OPTIONS[PRESET_OPTION_COUNT] = {
-    "Flat", "Acoustic", "Bass Boost", "Deep Bass", "Pop", "Rock",
-    "Alternative Rock", "Metal", "Punk", "Hip-Hop", "Electronic / EDM",
-    "R&B", "Jazz", "Classical", "Vocal", "Folk / Country", "Ambient", "Custom"};
+static const char CHECK_MARK[] = "\xE2\x9C\x93";
+static const char *const CONFIRM_OPTIONS[2] = {"Cancel", "Confirm"};
 
 static void apply_eq(const Settings *settings)
 {
     hal_audio_set_eq(settings->eq_enabled, settings->eq_gains);
 }
 
-static int item_count(const void *context)
+static int main_item_count(const void *context)
 {
-    (void)context;
-    return ROW_COUNT;
+    const EqualizerScreen *screen = context;
+    const Settings *settings = &screen->store->settings;
+    if (settings->eq_preset == EQ_PRESET_CUSTOM &&
+        settings->eq_user_preset_count < EQ_USER_PRESET_CAPACITY) {
+        return EQ_ROW_SAVE_PRESET + 1;
+    }
+    return EQ_DEFAULT_ROW_COUNT;
 }
 
-static const char *item_label(const void *context, int index)
+static const char *main_item_label(const void *context, int index)
 {
     (void)context;
     switch (index) {
-    case ROW_ENABLED:
+    case EQ_ROW_ENABLED:
         return "Equalizer";
-    case ROW_PRESET:
+    case EQ_ROW_PRESET:
         return "Preset";
+    case EQ_ROW_CUSTOM_EQ:
+        return "Custom EQ";
+    case EQ_ROW_RESET:
+        return "Reset Equalizer";
+    case EQ_ROW_SAVE_PRESET:
+        return "Save Preset";
     default:
-        return eq_band_name(index - ROW_BAND_100);
+        return "";
     }
 }
 
-static void format_gain(int8_t gain, bool active, char *buffer, size_t capacity)
-{
-    StringBuilder b = string_builder_make(buffer, capacity);
-    if (active) {
-        string_builder_append(&b, "< ");
-    }
-    if (gain > 0) {
-        string_builder_append_char(&b, '+');
-        string_builder_append_unsigned(&b, (uint32_t)gain);
-    } else if (gain < 0) {
-        string_builder_append_char(&b, '-');
-        string_builder_append_unsigned(&b, (uint32_t)(-gain));
-    } else {
-        string_builder_append_char(&b, '0');
-    }
-    string_builder_append(&b, " dB");
-    if (active) {
-        string_builder_append(&b, " >");
-    }
-}
-
-static void refresh_buffers(EqualizerScreen *screen)
-{
-    const Settings *settings = &screen->store->settings;
-    for (int band = 0; band < EQ_BAND_COUNT; band++) {
-        bool active = screen->adjusting && (screen->list.selected == band + ROW_BAND_100);
-        format_gain(settings->eq_gains[band], active, screen->value_buffers[band],
-                    sizeof screen->value_buffers[band]);
-    }
-}
-
-static const char *item_detail(const void *context, int index)
+static const char *main_item_detail(const void *context, int index)
 {
     const EqualizerScreen *screen = context;
     const Settings *settings = &screen->store->settings;
-    if (index == ROW_ENABLED) {
+    switch (index) {
+    case EQ_ROW_ENABLED:
         return settings->eq_enabled ? "On" : "Off";
+    case EQ_ROW_PRESET:
+        return settings_preset_name(settings, settings->eq_preset);
+    default:
+        return "";
     }
-    if (index == ROW_PRESET) {
-        return eq_preset(settings->eq_preset)->name;
-    }
-    int band = index - ROW_BAND_100;
-    return screen->value_buffers[band];
 }
 
-static bool item_opens(const void *context, int index)
+static bool main_item_opens(const void *context, int index)
 {
     (void)context;
-    return index == ROW_PRESET;
+    return index != EQ_ROW_ENABLED;
 }
 
-static int current_preset(const void *context)
+static int preset_item_count(const void *context)
 {
     const EqualizerScreen *screen = context;
-    return screen->store->settings.eq_preset;
+    return EQ_PRESET_COUNT + screen->store->settings.eq_user_preset_count;
 }
 
-static void choose_preset(void *context, int index)
+static const char *preset_item_label(const void *context, int index)
+{
+    const EqualizerScreen *screen = context;
+    const Settings *settings = &screen->store->settings;
+    if (index < EQ_PRESET_COUNT) {
+        return eq_preset(index)->name;
+    }
+    int user_idx = index - EQ_PRESET_COUNT;
+    if (user_idx >= 0 && user_idx < settings->eq_user_preset_count) {
+        return settings->eq_user_presets[user_idx].name;
+    }
+    return "";
+}
+
+static const char *preset_item_detail(const void *context, int index)
+{
+    const EqualizerScreen *screen = context;
+    const Settings *settings = &screen->store->settings;
+    if (index < EQ_PRESET_COUNT) {
+        return settings->eq_preset == index ? CHECK_MARK : NULL;
+    }
+    int user_idx = index - EQ_PRESET_COUNT;
+    if (user_idx >= 0 && user_idx < settings->eq_user_preset_count) {
+        return settings->eq_preset == settings->eq_user_presets[user_idx].id ? CHECK_MARK : NULL;
+    }
+    return NULL;
+}
+
+static int confirm_current(const void *context)
+{
+    (void)context;
+    return 0;
+}
+
+static void choose_reset_option(void *context, int index)
+{
+    EqualizerScreen *screen = context;
+    if (index == 1) {
+        Settings *settings = &screen->store->settings;
+        for (int band = 0; band < EQ_BAND_COUNT; band++) {
+            settings->eq_gains[band] = 0;
+        }
+        settings->eq_preset = 0;
+        apply_eq(settings);
+        settings_store_save(screen->store);
+    }
+}
+
+static ScreenAction open_reset_dialog(EqualizerScreen *screen)
+{
+    ChoiceConfig config = {
+        .title = "Reset Equalizer?",
+        .options = CONFIRM_OPTIONS,
+        .option_count = 2,
+        .current = confirm_current,
+        .choose = choose_reset_option,
+        .context = screen,
+        .theme = screen->theme,
+    };
+    return screen_action_push(choice_screen_init(&screen->reset_choice, config));
+}
+
+static void choose_delete_option(void *context, int index)
+{
+    EqualizerScreen *screen = context;
+    if (index == 1) {
+        settings_delete_user_preset(&screen->store->settings, screen->pending_delete_id);
+        settings_store_save(screen->store);
+    }
+}
+
+static ScreenAction open_delete_dialog(EqualizerScreen *screen, uint8_t preset_id)
+{
+    screen->pending_delete_id = preset_id;
+    ChoiceConfig config = {
+        .title = "Delete Preset?",
+        .options = CONFIRM_OPTIONS,
+        .option_count = 2,
+        .current = confirm_current,
+        .choose = choose_delete_option,
+        .context = screen,
+        .theme = screen->theme,
+    };
+    return screen_action_push(choice_screen_init(&screen->delete_choice, config));
+}
+
+static ScreenAction select_preset_item(void *context, int index)
 {
     EqualizerScreen *screen = context;
     Settings *settings = &screen->store->settings;
@@ -123,97 +167,141 @@ static void choose_preset(void *context, int index)
             settings->eq_gains[band] = preset->gains[band];
         }
     } else {
-        settings->eq_preset = EQ_PRESET_CUSTOM;
+        int user_idx = index - EQ_PRESET_COUNT;
+        if (user_idx >= 0 && user_idx < settings->eq_user_preset_count) {
+            settings->eq_preset = settings->eq_user_presets[user_idx].id;
+            for (int band = 0; band < EQ_BAND_COUNT; band++) {
+                settings->eq_gains[band] = settings->eq_user_presets[user_idx].gains[band];
+            }
+        }
     }
     apply_eq(settings);
-    refresh_buffers(screen);
+    settings_store_save(screen->store);
+    return screen_action_pop();
+}
+
+static ScreenAction hold_preset_item(void *context, int index)
+{
+    EqualizerScreen *screen = context;
+    Settings *settings = &screen->store->settings;
+    if (index >= EQ_PRESET_COUNT) {
+        int user_idx = index - EQ_PRESET_COUNT;
+        if (user_idx >= 0 && user_idx < settings->eq_user_preset_count) {
+            return open_delete_dialog(screen, settings->eq_user_presets[user_idx].id);
+        }
+    }
+    return screen_action_none();
+}
+
+static ScreenAction preset_screen_handle_key(void *context, KeyEvent event, uint32_t now_ms)
+{
+    EqualizerScreen *screen = context;
+    ListSelection selection = {
+        .select = select_preset_item, .hold = hold_preset_item, .context = screen};
+    return list_navigation_handle(&screen->preset_list, event, now_ms, selection);
+}
+
+static void preset_screen_enter(void *context, uint32_t now_ms)
+{
+    EqualizerScreen *screen = context;
+    screen->now_ms = now_ms;
+    const Settings *settings = &screen->store->settings;
+    int selected = 0;
+    if (settings->eq_preset < EQ_PRESET_COUNT) {
+        selected = settings->eq_preset;
+    } else {
+        int user_idx = settings_find_user_preset_by_id(settings, settings->eq_preset);
+        if (user_idx >= 0) {
+            selected = EQ_PRESET_COUNT + user_idx;
+        }
+    }
+    list_view_select(&screen->preset_list, selected, now_ms);
+}
+
+static void preset_screen_update(void *context, uint32_t now_ms)
+{
+    EqualizerScreen *screen = context;
+    screen->now_ms = now_ms;
+}
+
+static void preset_screen_draw(void *context, Canvas *canvas)
+{
+    EqualizerScreen *screen = context;
+    const Theme *theme = screen->theme;
+    Rect content = theme_content_area(theme);
+    canvas_fill_rect(canvas, content, theme->colors.background);
+    header_draw(canvas, theme, screen->preset_screen.title);
+    list_view_draw(&screen->preset_list, canvas, content, screen->now_ms);
 }
 
 static ScreenAction open_presets(EqualizerScreen *screen)
 {
-    ChoiceConfig config = {
-        .title = "Preset",
-        .options = PRESET_OPTIONS,
-        .option_count = PRESET_OPTION_COUNT,
-        .current = current_preset,
-        .choose = choose_preset,
+    screen->preset_model = (ListModel){
         .context = screen,
-        .theme = screen->theme,
+        .count = preset_item_count,
+        .label = preset_item_label,
+        .detail = preset_item_detail,
+        .opens = NULL,
+        .detail_max_width = 24,
+        .section = NULL,
     };
-    return screen_action_push(choice_screen_init(&screen->preset_choice, config));
+    list_view_init(&screen->preset_list, &screen->preset_model, screen->theme, 0);
+    screen->preset_screen = (Screen){
+        .title = "Preset",
+        .context = screen,
+        .full_screen = false,
+        .paints_every_pixel = false,
+        .hold_volume_keys = false,
+        .stays_on_wake = true,
+        .enter = preset_screen_enter,
+        .handle_key = preset_screen_handle_key,
+        .update = preset_screen_update,
+        .draw = preset_screen_draw,
+    };
+    return screen_action_push(&screen->preset_screen);
 }
 
-static ScreenAction select_item(void *context, int index)
+static ScreenAction select_main_item(void *context, int index)
 {
     EqualizerScreen *screen = context;
     Settings *settings = &screen->store->settings;
-    if (index == ROW_ENABLED) {
+    switch (index) {
+    case EQ_ROW_ENABLED:
         settings->eq_enabled = !settings->eq_enabled;
         apply_eq(settings);
+        settings_store_save(screen->store);
         return screen_action_none();
-    }
-    if (index == ROW_PRESET) {
+    case EQ_ROW_PRESET:
         return open_presets(screen);
-    }
-    screen->adjusting = true;
-    refresh_buffers(screen);
-    return screen_action_none();
-}
-
-static ScreenAction handle_adjusting_key(EqualizerScreen *screen, KeyEvent event)
-{
-    Settings *settings = &screen->store->settings;
-    int band = screen->list.selected - ROW_BAND_100;
-    bool is_step = event.gesture == KEY_GESTURE_PRESS || event.gesture == KEY_GESTURE_REPEAT;
-    if (event.key == KEY_VOLUME_UP && is_step) {
-        if (settings->eq_gains[band] < EQ_GAIN_MAX) {
-            settings->eq_gains[band]++;
-            settings->eq_preset = EQ_PRESET_CUSTOM;
-            apply_eq(settings);
-            refresh_buffers(screen);
-        }
+    case EQ_ROW_CUSTOM_EQ:
+        return screen_action_push(
+            custom_eq_screen_init(&screen->custom_eq, screen->store, screen->theme));
+    case EQ_ROW_RESET:
+        return open_reset_dialog(screen);
+    case EQ_ROW_SAVE_PRESET:
+        return screen_action_push(
+            save_preset_screen_init(&screen->save_preset, screen->store, screen->theme));
+    default:
         return screen_action_none();
     }
-    if (event.key == KEY_VOLUME_DOWN && is_step) {
-        if (settings->eq_gains[band] > EQ_GAIN_MIN) {
-            settings->eq_gains[band]--;
-            settings->eq_preset = EQ_PRESET_CUSTOM;
-            apply_eq(settings);
-            refresh_buffers(screen);
-        }
-        return screen_action_none();
-    }
-    if ((event.key == KEY_PLAY || event.key == KEY_BACK) && event.gesture == KEY_GESTURE_PRESS) {
-        screen->adjusting = false;
-        refresh_buffers(screen);
-        return screen_action_none();
-    }
-    return screen_action_none();
 }
 
 static ScreenAction handle_key(void *context, KeyEvent event, uint32_t now_ms)
 {
     EqualizerScreen *screen = context;
     screen->now_ms = now_ms;
-    if (screen->adjusting) {
-        return handle_adjusting_key(screen, event);
-    }
     if (event.key == KEY_BACK && event.gesture == KEY_GESTURE_PRESS) {
         settings_store_save(screen->store);
         return screen_action_pop();
     }
-    ListSelection selection = {.select = select_item, .hold = NULL, .context = screen};
-    ScreenAction action = list_navigation_handle(&screen->list, event, now_ms, selection);
-    refresh_buffers(screen);
-    return action;
+    ListSelection selection = {.select = select_main_item, .hold = NULL, .context = screen};
+    return list_navigation_handle(&screen->list, event, now_ms, selection);
 }
 
 static void enter(void *context, uint32_t now_ms)
 {
     EqualizerScreen *screen = context;
     screen->now_ms = now_ms;
-    screen->adjusting = false;
-    refresh_buffers(screen);
     list_view_restart_marquee(&screen->list, now_ms);
 }
 
@@ -223,58 +311,6 @@ static void update(void *context, uint32_t now_ms)
     screen->now_ms = now_ms;
 }
 
-static Color bar_color(const EqualizerScreen *screen, int band)
-{
-    if (!screen->store->settings.eq_enabled) {
-        return screen->theme->colors.text_tertiary;
-    }
-    int selected_band = screen->list.selected - ROW_BAND_100;
-    if (selected_band == band) {
-        return screen->adjusting ? screen->theme->colors.selection_top
-                                 : screen->theme->colors.selection_background;
-    }
-    return screen->theme->colors.text_secondary;
-}
-
-static void draw_bar(const EqualizerScreen *screen, Canvas *canvas, int band, int start_x, int y_mid)
-{
-    int8_t gain = screen->store->settings.eq_gains[band];
-    int height = (int8_t)(gain >= 0 ? gain : -gain) * BAR_MAX_HEIGHT / EQ_GAIN_MAX;
-    int x = start_x + band * (BAR_WIDTH + BAR_GAP);
-    Color color = bar_color(screen, band);
-    if (gain > 0) {
-        canvas_fill_rect(canvas, (Rect){x, y_mid - height, BAR_WIDTH, height}, color);
-    } else if (gain < 0) {
-        canvas_fill_rect(canvas, (Rect){x, y_mid, BAR_WIDTH, height}, color);
-    } else {
-        canvas_fill_rect(canvas, (Rect){x, y_mid - 1, BAR_WIDTH, 2}, color);
-    }
-}
-
-static void draw_panel(const EqualizerScreen *screen, Canvas *canvas, Rect area)
-{
-    const Theme *theme = screen->theme;
-    canvas_fill_rect(canvas, (Rect){area.x - PANEL_PAD, area.y, 1, area.height},
-                     theme->colors.divider);
-    int total_width = EQ_BAND_COUNT * BAR_WIDTH + (EQ_BAND_COUNT - 1) * BAR_GAP;
-    int start_x = area.x + (area.width - total_width) / 2;
-    int y_mid = area.y + (area.height - LABEL_HEIGHT - 10) / 2;
-    canvas_fill_rect(canvas, (Rect){start_x - 4, y_mid, total_width + 8, 1},
-                     theme->colors.divider);
-    for (int band = 0; band < EQ_BAND_COUNT; band++) {
-        draw_bar(screen, canvas, band, start_x, y_mid);
-    }
-    static const char *const SHORT_NAMES[EQ_BAND_COUNT] = {"100", "300", "1k", "3k", "10k"};
-    TextStyle style = {.font = theme->fonts.small, .color = theme->colors.text_secondary};
-    int label_y = y_mid + BAR_MAX_HEIGHT + 4;
-    for (int band = 0; band < EQ_BAND_COUNT; band++) {
-        int x = start_x + band * (BAR_WIDTH + BAR_GAP) - 3;
-        label_draw(canvas, style,
-                   (Label){.area = {x, label_y, BAR_WIDTH + 6, LABEL_HEIGHT},
-                           .text = SHORT_NAMES[band]});
-    }
-}
-
 static void draw(void *context, Canvas *canvas)
 {
     EqualizerScreen *screen = context;
@@ -282,11 +318,7 @@ static void draw(void *context, Canvas *canvas)
     Rect content = theme_content_area(theme);
     canvas_fill_rect(canvas, content, theme->colors.background);
     header_draw(canvas, theme, screen->screen.title);
-    Rect list_area = {content.x, content.y, content.width - PANEL_WIDTH, content.height};
-    Rect side_area = {content.x + content.width - PANEL_WIDTH + PANEL_PAD, content.y,
-                      PANEL_WIDTH - 2 * PANEL_PAD, content.height};
-    list_view_draw(&screen->list, canvas, list_area, screen->now_ms);
-    draw_panel(screen, canvas, side_area);
+    list_view_draw(&screen->list, canvas, content, screen->now_ms);
 }
 
 Screen *equalizer_screen_init(EqualizerScreen *eq_screen, SettingsStore *store,
@@ -294,14 +326,15 @@ Screen *equalizer_screen_init(EqualizerScreen *eq_screen, SettingsStore *store,
 {
     eq_screen->store = store;
     eq_screen->theme = theme;
-    eq_screen->adjusting = false;
+    eq_screen->now_ms = 0;
+    eq_screen->pending_delete_id = 0;
     eq_screen->model = (ListModel){
         .context = eq_screen,
-        .count = item_count,
-        .label = item_label,
-        .detail = item_detail,
-        .opens = item_opens,
-        .detail_max_width = 72,
+        .count = main_item_count,
+        .label = main_item_label,
+        .detail = main_item_detail,
+        .opens = main_item_opens,
+        .detail_max_width = 80,
         .section = NULL,
     };
     list_view_init(&eq_screen->list, &eq_screen->model, theme, 0);

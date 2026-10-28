@@ -8,7 +8,7 @@ enum {
     EQ_GAIN_MIN = -12,
     EQ_GAIN_MAX = 12,
     EQ_PRESET_COUNT = 17,
-    EQ_PRESET_CUSTOM = 17,
+    EQ_PRESET_CUSTOM = 255,
     EQ_BAND_100_HZ = 0,
     EQ_BAND_300_HZ = 1,
     EQ_BAND_1_KHZ = 2,

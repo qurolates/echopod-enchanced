@@ -4,11 +4,22 @@
 #include <stdint.h>
 
 #include "core/eq.h"
+#include "screens/custom_eq_screen.h"
+#include "screens/save_preset_screen.h"
 #include "settings_store.h"
 #include "ui/choice_screen.h"
 #include "ui/list_view.h"
 #include "ui/screen.h"
 #include "ui/theme.h"
+
+enum {
+    EQ_ROW_ENABLED,
+    EQ_ROW_PRESET,
+    EQ_ROW_CUSTOM_EQ,
+    EQ_ROW_RESET,
+    EQ_ROW_SAVE_PRESET,
+    EQ_DEFAULT_ROW_COUNT = 4
+};
 
 typedef struct EqualizerScreen {
     Screen screen;
@@ -16,10 +27,18 @@ typedef struct EqualizerScreen {
     const Theme *theme;
     ListModel model;
     ListView list;
-    ChoiceScreen preset_choice;
-    bool adjusting;
+
+    Screen preset_screen;
+    ListModel preset_model;
+    ListView preset_list;
+
+    CustomEqScreen custom_eq;
+    SavePresetScreen save_preset;
+    ChoiceScreen reset_choice;
+    ChoiceScreen delete_choice;
+
+    uint8_t pending_delete_id;
     uint32_t now_ms;
-    char value_buffers[EQ_BAND_COUNT][24];
 } EqualizerScreen;
 
 Screen *equalizer_screen_init(EqualizerScreen *eq_screen, SettingsStore *store,

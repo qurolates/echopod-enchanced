@@ -222,7 +222,7 @@ static const char *equalizer_value(const void *context)
     if (!settings->eq_enabled) {
         return "Off";
     }
-    return eq_preset(settings->eq_preset)->name;
+    return settings_preset_name(settings, settings->eq_preset);
 }
 
 static ScreenAction request_rescan(void *context)
