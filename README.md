@@ -2,7 +2,7 @@
 
 **EchoPod Enhanced** is a feature-extended fork of [EchoPod](https://github.com/BasilSkyWalk/echopod), the replacement firmware for the Snowsky (FiiO) Echo Mini portable music player (dual Cortex-M3 Rockchip RKnanoC).
 
-This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, full **Cyrillic and expanded CJK Unicode font coverage**, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
+This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a **5-band equalizer with user presets**, **ReplayGain with anti-clipping**, full **Cyrillic and expanded CJK Unicode font coverage**, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
 
 > [!NOTE]
 > EchoPod Enhanced is community-developed open-source software and is not affiliated with or endorsed by FiiO / Snowsky.
@@ -25,18 +25,29 @@ This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, f
 - **Seamless Codec Switching:** Smooth queue transitions across FLAC, MP3, AAC, and Opus tracks.
 - **UI Codec Indicator:** Shows `OPUS` badge on the Now Playing screen.
 
-### 3. Power Button Boot Logic
+### 3. 5-Band Equalizer & Custom Presets
+- **Biquad IIR Engine:** 5 frequency bands (60 Hz, 250 Hz, 1 kHz, 4 kHz, 12 kHz) with a ±12 dB gain range in 1 dB steps.
+- **Genre & User Presets:** Built-in Flat, Rock, Pop, Classical, Jazz, Dance, Vocal, and Metal presets, plus persistent storage for custom user-named presets.
+- **Two-Level UI:** Clean Equalizer screen with On/Off toggle, preset browser, reset action, and an interactive full-screen band editor with live playback feedback.
+
+### 4. ReplayGain Normalization & Anti-Clipping
+- **Track & Album Modes:** Seamless loudness leveling across tracks or entire albums without dynamic compression.
+- **Anti-Clipping Protection:** Uses track/album peak tags to automatically scale back gain when boost would cause clipping.
+- **Smooth Cross-Track Transitions:** Slewed gain adjustment between consecutive tracks to prevent audible clicks.
+- **Multi-Format Tag Probing:** Extracts ReplayGain fields from ID3v2 (MP3/WAV), Vorbis Comments (FLAC/Opus), and MP4 custom atoms (AAC).
+
+### 5. Power Button Boot Logic
 - **Hold-to-Boot Detection:** Implements a state-machine debounce and hold check (`BOOT_POWER_HOLD_MS`) on boot. Prevents false power-ons from brief accidental presses in a pocket or bag.
 
-### 4. Multilingual Unicode Typography
+### 6. Multilingual Unicode Typography
 - **Cyrillic & Extended CJK Support:** Complete Cyrillic alphabet (Russian, Belarusian, Ukrainian) and expanded Chinese, Japanese, and Korean glyphs integrated into the compressed bitmap font system.
 - **Case Folding & Sorting:** Fold table updated for proper Unicode case folding, searching, and alphabetical sorting in the music library.
 
-### 5. Memory & Performance Measurements
-- **Core 0 CODE_RAM:** 138,348 bytes used out of 157,292 limit (**+18.9 KB headroom** in Release build).
+### 7. Memory & Performance Measurements
+- **Core 0 CODE_RAM:** 146,988 bytes used out of 157,292 limit (**+10.3 KB headroom** in Release build).
 - **Core 1 AAC Overlay:** 50,540 bytes code (**+77 KB headroom**).
 - **Core 1 Opus Overlay:** 73,160 bytes code, 27.7 KB BSS (**+57 KB code headroom**, **+13 KB BSS headroom**).
-- **Test Suite:** 100% passed (126 / 126 CTest units).
+- **Test Suite:** 100% passed (130 / 130 CTest units).
 
 ---
 
@@ -164,7 +175,7 @@ mkdir -p build/system
 
 - **EchoPod Enhanced Fork:**
   - **[@qurolates](https://github.com/qurolates)** — Creator and maintainer.
-  - **Antigravity by Google DeepMind** — AI pair programmer (AAC-LC and Ogg Opus dual-core codecs, multilingual Unicode fonts, boot power logic).
+  - **Antigravity by Google DeepMind** — AI pair programmer (AAC-LC and Ogg Opus dual-core codecs, multilingual Unicode fonts, boot power logic, 5-band EQ, and ReplayGain engine).
 - **EchoPod Core & UI:** GPL-3.0-or-later. Original project created by [Basil Joy](https://github.com/BasilSkyWalk/echopod).
 - **Reverse Engineering & Hardware Research:** Built upon findings from the [ReChord](https://github.com/brnomt/ReChord) project (`docs/hardware.md`, `CREDITS.md`).
 - **libopus:** BSD-3-Clause (Xiph.Org Foundation, Skype Technologies SA).
