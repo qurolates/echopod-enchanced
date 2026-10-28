@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "core/eq.h"
+#include "core/replay_gain.h"
 #include "playback/play_queue.h"
 
 typedef enum GainLevel {
@@ -65,6 +66,7 @@ typedef struct Settings {
     int8_t eq_gains[EQ_BAND_COUNT];
     uint8_t eq_user_preset_count;
     EqUserPreset eq_user_presets[EQ_USER_PRESET_CAPACITY];
+    ReplayGainMode replay_gain_mode;
 } Settings;
 
 Settings settings_defaults(void);

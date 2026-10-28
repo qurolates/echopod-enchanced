@@ -1,4 +1,5 @@
 #include "device/wav_source.h"
+#include "device/replay_gain_probe.h"
 
 #include <stddef.h>
 
@@ -139,6 +140,7 @@ static bool open_source(void *context, const char *path, uint32_t start_ms, Audi
                                          .total_samples = format.frames},
                               .audio_bytes = format.frames * format.frame_bytes,
                               .codec = AUDIO_CODEC_WAV};
+    replay_gain_probe_source(source->input, AUDIO_CODEC_WAV, &track->replay_gain);
     return true;
 }
 

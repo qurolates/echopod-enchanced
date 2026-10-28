@@ -1,4 +1,5 @@
 #include "device/flac_source.h"
+#include "device/replay_gain_probe.h"
 
 enum {
     MILLISECONDS_PER_SECOND = 1000
@@ -38,7 +39,9 @@ bool flac_source_open_at(FlacSource *source, const char *path, uint32_t start_ms
         return false;
     }
     *track = (AudioTrackInfo){.stream = decoder->info,
-                              .audio_bytes = input.size - decoder->audio_offset};
+                              .audio_bytes = input.size - decoder->audio_offset,
+                              .codec = AUDIO_CODEC_FLAC};
+    replay_gain_probe_source(input, AUDIO_CODEC_FLAC, &track->replay_gain);
     return true;
 }
 

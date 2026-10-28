@@ -109,6 +109,13 @@ static void offer_entry(TagReader *reader, ByteSource source, uint32_t offset, u
     }
     int field = field_for_key(value, key);
     if (field < 0) {
+        uint32_t wanted = value_length < VALUE_CAPACITY ? value_length : VALUE_CAPACITY;
+        uint8_t val_buf[64];
+        uint32_t val_read = wanted < sizeof val_buf ? wanted : (uint32_t)sizeof val_buf;
+        if (source_read(source, value_offset, val_buf, val_read)) {
+            replay_gain_assign_field(&reader->tags->replay_gain, (const char *)value, key,
+                                     (const char *)val_buf, val_read);
+        }
         return;
     }
     uint32_t wanted = value_length < VALUE_CAPACITY ? value_length : VALUE_CAPACITY;

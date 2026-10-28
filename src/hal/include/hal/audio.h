@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "core/replay_gain.h"
+
 enum {
     HAL_AUDIO_VOLUME_MAX = 50
 };
@@ -93,6 +95,8 @@ typedef struct HalAudioStats {
     bool eq_enabled;
     bool eq_flat;
     bool dsp_bypass;
+    ReplayGainMode replay_gain_mode;
+    uint32_t replay_gain_mult;
 } HalAudioStats;
 
 typedef enum HalToneResult {
@@ -135,6 +139,8 @@ void hal_audio_set_volume(uint8_t level);
 void hal_audio_set_gain(HalAudioGain gain);
 void hal_audio_set_output(HalAudioOutput output);
 void hal_audio_set_eq(bool enabled, const int8_t *gains);
+void hal_audio_set_replay_gain_mode(ReplayGainMode mode);
+ReplayGainMode hal_audio_replay_gain_mode(void);
 void hal_audio_set_dsp_bypass(bool bypass);
 bool hal_audio_dsp_bypass(void);
 HalAudioStatus hal_audio_status(void);

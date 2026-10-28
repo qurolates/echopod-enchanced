@@ -15,6 +15,7 @@ endfunction()
 
 echo_add_unit_test(NAME test_deadline SOURCES core/test_deadline.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_eq SOURCES core/test_eq.c LIBRARIES echo_core)
+echo_add_unit_test(NAME test_replay_gain SOURCES core/test_replay_gain.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_frame_stats SOURCES core/test_frame_stats.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_key_tracker SOURCES core/test_key_tracker.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_utf8 SOURCES core/test_utf8.c LIBRARIES echo_core)

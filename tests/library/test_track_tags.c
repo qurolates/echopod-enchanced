@@ -191,6 +191,76 @@ static void damaged_files_never_read_outside_the_file(void)
     }
 }
 
+static void replay_gain_metadata_is_extracted_for_formats(void)
+{
+    uint8_t flac_buf[256] = {0};
+    uint32_t p = 0;
+    flac_buf[p++] = 'f'; flac_buf[p++] = 'L'; flac_buf[p++] = 'a'; flac_buf[p++] = 'C';
+    flac_buf[p++] = 0; flac_buf[p++] = 0; flac_buf[p++] = 0; flac_buf[p++] = 34;
+    p += 34;
+    uint32_t comment_block_header_pos = p;
+    p += 4;
+    flac_buf[p++] = 4; flac_buf[p++] = 0; flac_buf[p++] = 0; flac_buf[p++] = 0;
+    flac_buf[p++] = 'e'; flac_buf[p++] = 'c'; flac_buf[p++] = 'h'; flac_buf[p++] = 'o';
+    flac_buf[p++] = 2; flac_buf[p++] = 0; flac_buf[p++] = 0; flac_buf[p++] = 0;
+    const char *c1 = "REPLAYGAIN_TRACK_GAIN=-7.50 dB";
+    uint32_t l1 = (uint32_t)strlen(c1);
+    flac_buf[p++] = (uint8_t)l1; flac_buf[p++] = 0; flac_buf[p++] = 0; flac_buf[p++] = 0;
+    memcpy(flac_buf + p, c1, l1);
+    p += l1;
+    const char *c2 = "REPLAYGAIN_TRACK_PEAK=0.988281";
+    uint32_t l2 = (uint32_t)strlen(c2);
+    flac_buf[p++] = (uint8_t)l2; flac_buf[p++] = 0; flac_buf[p++] = 0; flac_buf[p++] = 0;
+    memcpy(flac_buf + p, c2, l2);
+    p += l2;
+    uint32_t comment_len = p - (comment_block_header_pos + 4);
+    flac_buf[comment_block_header_pos] = 0x84;
+    flac_buf[comment_block_header_pos + 1] = (uint8_t)(comment_len >> 16);
+    flac_buf[comment_block_header_pos + 2] = (uint8_t)(comment_len >> 8);
+    flac_buf[comment_block_header_pos + 3] = (uint8_t)comment_len;
+
+    MemorySource flac_mem = {.bytes = flac_buf, .size = p};
+    TrackTags tags = {0};
+    CHECK(track_tags_read(memory_source(&flac_mem), p, TAG_FORMAT_FLAC, &tags));
+    CHECK(tags.replay_gain.has_track_gain);
+    CHECK_EQUAL(-750, tags.replay_gain.track_gain_cb);
+    CHECK(tags.replay_gain.has_track_peak);
+    CHECK(tags.replay_gain.track_peak_q16 > 64700 && tags.replay_gain.track_peak_q16 < 64800);
+
+    Fixture mp3_fix;
+    CHECK(load(&mp3_fix, "id3v24.mp3"));
+    uint32_t mp3_pos = 10;
+    while (mp3_pos < mp3_fix.size && mp3_fix.bytes[mp3_pos] != 0) {
+        uint32_t size = ((uint32_t)(mp3_fix.bytes[mp3_pos + 4] & 0x7F) << 21) |
+                        ((uint32_t)(mp3_fix.bytes[mp3_pos + 5] & 0x7F) << 14) |
+                        ((uint32_t)(mp3_fix.bytes[mp3_pos + 6] & 0x7F) << 7) |
+                        (uint32_t)(mp3_fix.bytes[mp3_pos + 7] & 0x7F);
+        mp3_pos += 10 + size;
+    }
+    const char *desc = "replaygain_track_gain";
+    uint32_t dlen = (uint32_t)strlen(desc);
+    const char *val = "-6.20 dB";
+    uint32_t vlen = (uint32_t)strlen(val);
+    uint32_t payload_len = 1 + dlen + 1 + vlen;
+    uint8_t txxx_header[10] = {
+        'T', 'X', 'X', 'X',
+        0, 0, (uint8_t)((payload_len >> 7) & 0x7F), (uint8_t)(payload_len & 0x7F),
+        0, 0
+    };
+    memcpy(mp3_fix.bytes + mp3_pos, txxx_header, 10);
+    mp3_pos += 10;
+    mp3_fix.bytes[mp3_pos++] = 0;
+    memcpy(mp3_fix.bytes + mp3_pos, desc, dlen + 1);
+    mp3_pos += dlen + 1;
+    memcpy(mp3_fix.bytes + mp3_pos, val, vlen);
+
+    memset(&tags, 0, sizeof tags);
+    CHECK(track_tags_read(memory_source(&mp3_fix.memory), mp3_fix.size, TAG_FORMAT_MP3, &tags));
+    CHECK(tags.replay_gain.has_track_gain);
+    CHECK_EQUAL(-620, tags.replay_gain.track_gain_cb);
+    free(mp3_fix.bytes);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -200,6 +270,7 @@ int main(void)
         TEST_CASE(formats_come_from_the_extension_in_any_case),
         TEST_CASE(a_truncated_file_fails_cleanly),
         TEST_CASE(damaged_files_never_read_outside_the_file),
+        TEST_CASE(replay_gain_metadata_is_extracted_for_formats),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

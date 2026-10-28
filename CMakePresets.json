@@ -20,7 +20,8 @@
         "CMAKE_C_FLAGS_RELEASE": "-Os",
         "ECHO_BUILD_SIM": "OFF",
         "ECHO_BUILD_TESTS": "OFF",
-        "ECHO_BUILD_DEVICE": "ON"
+        "ECHO_BUILD_DEVICE": "ON",
+        "ECHO_RELEASE": "ON"
       }
     },
     {

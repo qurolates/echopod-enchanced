@@ -23,6 +23,7 @@ static const char *const BRIGHTNESS_OPTIONS[BRIGHTNESS_LEVEL_COUNT] = {"1", "2",
                                                                        "6", "7", "8", "9", "10"};
 static const char *const GAIN_OPTIONS[GAIN_LEVEL_COUNT] = {"Low", "High"};
 static const char *const OUTPUT_OPTIONS[OUTPUT_JACK_COUNT] = {"Auto", "3.5 mm", "4.4 mm"};
+static const char *const REPLAY_GAIN_OPTIONS[REPLAY_GAIN_MODE_COUNT] = {"Off", "Track", "Album"};
 static const char *const START_OPTIONS[START_SCREEN_COUNT] = {
     "Main menu", "Now Playing", "Albums", "Artists", "Favorites", "Playlists", "Cover Flow"};
 
@@ -158,6 +159,17 @@ static void choose_output(void *context, int index)
     apply_and_save(context);
 }
 
+static int current_replay_gain(const void *context)
+{
+    return (int)settings_of(context)->replay_gain_mode;
+}
+
+static void choose_replay_gain(void *context, int index)
+{
+    editable_settings(context)->replay_gain_mode = (ReplayGainMode)index;
+    apply_and_save(context);
+}
+
 static int current_start(const void *context)
 {
     return (int)settings_of(context)->start_screen;
@@ -181,6 +193,8 @@ static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
     {"Gain", GAIN_OPTIONS, GAIN_LEVEL_COUNT, current_gain, choose_gain},
     {"Output", OUTPUT_OPTIONS, OUTPUT_JACK_COUNT, current_output, choose_output},
     {"Start screen", START_OPTIONS, START_SCREEN_COUNT, current_start, choose_start},
+    {"ReplayGain", REPLAY_GAIN_OPTIONS, REPLAY_GAIN_MODE_COUNT, current_replay_gain,
+     choose_replay_gain},
 };
 
 static ScreenAction open_choice(void *context)

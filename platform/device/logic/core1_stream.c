@@ -6,6 +6,7 @@
 #include "device/mp3_probe.h"
 #include "device/opus_decoder.h"
 #include "device/opus_probe.h"
+#include "device/replay_gain_probe.h"
 
 enum {
     MP3_OUTPUT_BITS = 24,
@@ -376,6 +377,7 @@ static bool open_mp3(void *context, const char *path, uint32_t start_ms, AudioTr
                                          .total_samples = mp3.total_samples},
                               .audio_bytes = mp3.audio_end - mp3.audio_start,
                               .codec = AUDIO_CODEC_MP3};
+    replay_gain_probe_source(source->input, AUDIO_CODEC_MP3, &track->replay_gain);
     volatile StreamControl *control = source->region.control;
     control->sample_rate = mp3.sample_rate;
     control->channels = mp3.channels;
@@ -430,6 +432,7 @@ static bool open_aac(void *context, const char *path, uint32_t start_ms, AudioTr
                                          .total_samples = aac.total_samples},
                               .audio_bytes = aac.audio_end - aac.audio_start,
                               .codec = AUDIO_CODEC_AAC};
+    replay_gain_probe_source(source->input, AUDIO_CODEC_AAC, &track->replay_gain);
     volatile StreamControl *control = source->region.control;
     control->sample_rate = aac.sample_rate;
     control->channels = aac.channels;
@@ -484,6 +487,7 @@ static bool open_opus(void *context, const char *path, uint32_t start_ms, AudioT
                                          .total_samples = opus.total_samples},
                               .audio_bytes = opus.audio_end - opus.audio_start,
                               .codec = AUDIO_CODEC_OPUS};
+    replay_gain_probe_source(source->input, AUDIO_CODEC_OPUS, &track->replay_gain);
     volatile StreamControl *control = source->region.control;
     control->sample_rate = opus.sample_rate;
     control->channels = opus.channels;

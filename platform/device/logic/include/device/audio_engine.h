@@ -5,6 +5,7 @@
 
 #include "codec/flac.h"
 #include "core/eq.h"
+#include "core/replay_gain.h"
 
 enum {
     AUDIO_ENGINE_PATH_CAPACITY = 256,
@@ -45,6 +46,7 @@ typedef struct AudioTrackInfo {
     FlacInfo stream;
     uint32_t audio_bytes;
     AudioCodec codec;
+    ReplayGainValues replay_gain;
 } AudioTrackInfo;
 
 typedef struct AudioSource {
@@ -122,11 +124,17 @@ typedef struct AudioEngine {
     AudioRefusal refusal;
     Eq eq;
     bool dsp_bypass;
+    ReplayGainMode replay_gain_mode;
+    uint32_t replay_gain_mult;
+    uint32_t target_replay_gain_mult;
 } AudioEngine;
 
 void audio_engine_init(AudioEngine *engine, AudioEngineConfig config);
 void audio_engine_set_volume(AudioEngine *engine, uint8_t level);
 void audio_engine_set_eq(AudioEngine *engine, bool enabled, const int8_t *gains);
+void audio_engine_set_replay_gain_mode(AudioEngine *engine, ReplayGainMode mode);
+ReplayGainMode audio_engine_replay_gain_mode(const AudioEngine *engine);
+uint32_t audio_engine_replay_gain_mult(const AudioEngine *engine);
 void audio_engine_set_dsp_bypass(AudioEngine *engine, bool bypass);
 bool audio_engine_dsp_bypass(const AudioEngine *engine);
 bool audio_engine_play(AudioEngine *engine, const char *path, uint32_t start_ms, uint32_t token);

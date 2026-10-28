@@ -41,6 +41,9 @@ typedef struct SimAudio {
     HalAudioOutput output;
     Eq eq;
     bool dsp_bypass;
+    ReplayGainMode replay_gain_mode;
+    uint32_t replay_gain_mult;
+    uint32_t target_replay_gain_mult;
 } SimAudio;
 
 static SimAudio audio;
@@ -86,6 +89,11 @@ static bool open_track(SimTrack *track, const char *path, uint32_t token)
     track->token = token;
     track->open = sim_storage_host_path(path, host_path, sizeof host_path) &&
                   sim_decoder_open(&track->decoder, host_path);
+    if (track->open && track == current_track()) {
+        audio.target_replay_gain_mult = replay_gain_calculate_multiplier(
+            &track->decoder.replay_gain, audio.replay_gain_mode);
+        audio.replay_gain_mult = audio.target_replay_gain_mult;
+    }
     return track->open;
 }
 
@@ -117,6 +125,8 @@ static bool switch_to_next(void)
         return false;
     }
     audio.current = 1 - audio.current;
+    audio.target_replay_gain_mult = replay_gain_calculate_multiplier(
+        &current_track()->decoder.replay_gain, audio.replay_gain_mode);
     use_stream_rate(current_track()->decoder.sample_rate);
     return true;
 }
@@ -135,8 +145,23 @@ static bool decode_chunk(void)
         eq_step_gains(&audio.eq);
     }
     for (uint64_t sample = 0; sample < frames; sample++) {
+        if (audio.replay_gain_mult != audio.target_replay_gain_mult) {
+            int32_t diff =
+                (int32_t)audio.target_replay_gain_mult - (int32_t)audio.replay_gain_mult;
+            int32_t step = diff / 64;
+            if (step == 0) {
+                step = diff > 0 ? 1 : -1;
+            }
+            audio.replay_gain_mult = (uint32_t)((int32_t)audio.replay_gain_mult + step);
+        }
         int32_t left = (int32_t)(chunk[sample * STEREO] * 8388607.0f);
         int32_t right = (int32_t)(chunk[sample * STEREO + 1] * 8388607.0f);
+        if (!audio.dsp_bypass && audio.replay_gain_mult != 65536) {
+            int64_t l_val = ((int64_t)left * audio.replay_gain_mult + 32768) >> 16;
+            int64_t r_val = ((int64_t)right * audio.replay_gain_mult + 32768) >> 16;
+            left = l_val > 8388607 ? 8388607 : l_val < -8388608 ? -8388608 : (int32_t)l_val;
+            right = r_val > 8388607 ? 8388607 : r_val < -8388608 ? -8388608 : (int32_t)r_val;
+        }
         if (!audio.dsp_bypass) {
             eq_process_frame(&audio.eq, &left, &right);
         }
@@ -323,6 +348,24 @@ void hal_audio_set_eq(bool enabled, const int8_t *gains)
     unlock();
 }
 
+void hal_audio_set_replay_gain_mode(ReplayGainMode mode)
+{
+    lock();
+    audio.replay_gain_mode = mode;
+    audio.target_replay_gain_mult = replay_gain_calculate_multiplier(
+        &current_track()->decoder.replay_gain, mode);
+    audio.replay_gain_mult = audio.target_replay_gain_mult;
+    unlock();
+}
+
+ReplayGainMode hal_audio_replay_gain_mode(void)
+{
+    lock();
+    ReplayGainMode mode = audio.replay_gain_mode;
+    unlock();
+    return mode;
+}
+
 void hal_audio_set_dsp_bypass(bool bypass)
 {
     lock();
@@ -343,7 +386,8 @@ void hal_audio_service(void)
 
 HalAudioStats hal_audio_stats(void)
 {
-    return (HalAudioStats){0};
+    return (HalAudioStats){.replay_gain_mode = audio.replay_gain_mode,
+                           .replay_gain_mult = audio.replay_gain_mult};
 }
 
 HalToneDetail hal_audio_tone_detail(void)

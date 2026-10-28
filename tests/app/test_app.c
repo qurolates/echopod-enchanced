@@ -38,7 +38,8 @@ enum {
     SETTINGS_BRIGHTNESS_INDEX = 5,
     SETTINGS_GAIN_INDEX = 6,
     SETTINGS_START_INDEX = 8,
-    SETTINGS_RESCAN_INDEX = 9,
+    SETTINGS_REPLAY_GAIN_INDEX = 9,
+    SETTINGS_RESCAN_INDEX = 10,
     MUSIC_COVER_FLOW_INDEX = 0,
     MUSIC_PLAYLISTS_INDEX = 7,
     COVER_CENTER_X = 160,
@@ -552,6 +553,20 @@ static void gain_is_applied(void)
     move_down(1);
     tap(KEY_PLAY);
     CHECK_EQUAL(HAL_AUDIO_GAIN_HIGH, fake_hal_audio_gain());
+}
+
+static void replay_gain_is_applied_and_saved(void)
+{
+    start_app_with_library();
+    CHECK_EQUAL(REPLAY_GAIN_OFF, hal_audio_replay_gain_mode());
+    open_setting(SETTINGS_REPLAY_GAIN_INDEX);
+    CHECK(title_is("ReplayGain"));
+    move_down(1);
+    tap(KEY_PLAY);
+    CHECK_EQUAL(REPLAY_GAIN_TRACK, hal_audio_replay_gain_mode());
+    Settings settings;
+    CHECK(saved_settings(&settings));
+    CHECK_EQUAL(REPLAY_GAIN_TRACK, settings.replay_gain_mode);
 }
 
 static void saved_settings_are_restored_at_start(void)
@@ -1808,6 +1823,7 @@ int main(void)
         TEST_CASE(settings_choose_shuffle_and_repeat),
         TEST_CASE(brightness_is_applied_and_saved),
         TEST_CASE(gain_is_applied),
+        TEST_CASE(replay_gain_is_applied_and_saved),
         TEST_CASE(saved_settings_are_restored_at_start),
         TEST_CASE(a_new_screen_slides_in_from_the_right),
         TEST_CASE(going_back_slides_the_screen_out_to_the_right),

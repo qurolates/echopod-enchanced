@@ -225,6 +225,48 @@ static void read_item(TagReader *reader, const Atom *item_atom, const Atom *genr
     }
 }
 
+static void read_custom_atom(TagReader *reader, const Atom *custom_atom)
+{
+    Atom name_atom;
+    Atom data_atom;
+    bool has_name = false;
+    bool has_data = false;
+    uint32_t cursor = custom_atom->body;
+    Atom child;
+    while (read_atom(reader, cursor, custom_atom->end, &child)) {
+        if (tag_same_text(child.type, 4, "name")) {
+            name_atom = child;
+            has_name = true;
+        } else if (tag_same_text(child.type, 4, "data")) {
+            data_atom = child;
+            has_data = true;
+        }
+        cursor = child.end;
+    }
+    if (!has_name || !has_data) {
+        return;
+    }
+    char name_buf[48] = {0};
+    if (name_atom.end <= name_atom.body + 4) {
+        return;
+    }
+    uint32_t name_len = name_atom.end - (name_atom.body + 4);
+    name_len = name_len < sizeof name_buf ? name_len : (uint32_t)sizeof name_buf - 1;
+    if (!tag_read(reader, name_atom.body + 4, name_buf, name_len)) {
+        return;
+    }
+    char data_buf[48] = {0};
+    if (data_atom.end <= data_atom.body + 8) {
+        return;
+    }
+    uint32_t data_len = data_atom.end - (data_atom.body + 8);
+    data_len = data_len < sizeof data_buf ? data_len : (uint32_t)sizeof data_buf - 1;
+    if (!tag_read(reader, data_atom.body + 8, data_buf, data_len)) {
+        return;
+    }
+    replay_gain_assign_field(&reader->tags->replay_gain, name_buf, name_len, data_buf, data_len);
+}
+
 static void read_items(TagReader *reader, const Atom *ilst)
 {
     uint32_t cursor = ilst->body;
@@ -235,6 +277,8 @@ static void read_items(TagReader *reader, const Atom *ilst)
         if (tag_same_text(atom.type, 4, "gnre")) {
             old_genre = atom;
             has_old_genre = true;
+        } else if (tag_same_text(atom.type, 4, "----")) {
+            read_custom_atom(reader, &atom);
         } else {
             read_item(reader, &atom, NULL);
         }

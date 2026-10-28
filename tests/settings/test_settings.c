@@ -10,6 +10,7 @@ enum {
     AUTO_OFF_FIELD = 14,
     EQ_PRESET_FIELD = 16,
     EQ_USER_COUNT_FIELD = 22,
+    REPLAY_GAIN_FIELD = 23,
     USER_PRESETS_BASE = 24,
     LEGACY_CHECKSUM_FIELD = 20,
     LEGACY_FILE_SIZE = 24,
@@ -38,6 +39,7 @@ static Settings custom_settings(void)
     settings.eq_gains[2] = -1;
     settings.eq_gains[3] = 2;
     settings.eq_gains[4] = 2;
+    settings.replay_gain_mode = REPLAY_GAIN_TRACK;
     return settings;
 }
 
@@ -64,6 +66,7 @@ static void defaults_are_comfortable(void)
     CHECK(!settings.eq_enabled);
     CHECK_EQUAL(0, settings.eq_preset);
     CHECK_EQUAL(0, settings.eq_user_preset_count);
+    CHECK_EQUAL(REPLAY_GAIN_OFF, settings.replay_gain_mode);
     for (int band = 0; band < EQ_BAND_COUNT; band++) {
         CHECK_EQUAL(0, settings.eq_gains[band]);
     }
@@ -92,6 +95,7 @@ static void a_version_one_file_keeps_its_values_and_gets_the_default_auto_off(vo
     CHECK(!decoded.eq_enabled);
     CHECK_EQUAL(0, decoded.eq_preset);
     CHECK_EQUAL(0, decoded.eq_user_preset_count);
+    CHECK_EQUAL(REPLAY_GAIN_OFF, decoded.replay_gain_mode);
 }
 
 static void a_version_two_file_keeps_its_values_and_gets_default_eq(void)
@@ -109,6 +113,7 @@ static void a_version_two_file_keeps_its_values_and_gets_default_eq(void)
     CHECK(!decoded.eq_enabled);
     CHECK_EQUAL(0, decoded.eq_preset);
     CHECK_EQUAL(0, decoded.eq_user_preset_count);
+    CHECK_EQUAL(REPLAY_GAIN_OFF, decoded.replay_gain_mode);
 }
 
 static void a_version_three_file_decodes_eq_settings(void)
@@ -125,6 +130,27 @@ static void a_version_three_file_decodes_eq_settings(void)
     CHECK_EQUAL(5, decoded.eq_preset);
     CHECK_EQUAL(3, decoded.eq_gains[0]);
     CHECK_EQUAL(0, decoded.eq_user_preset_count);
+    CHECK_EQUAL(REPLAY_GAIN_OFF, decoded.replay_gain_mode);
+}
+
+static void a_version_four_file_decodes_and_defaults_replay_gain_to_off(void)
+{
+    Settings settings = custom_settings();
+    int8_t user_gains[EQ_BAND_COUNT] = {4, 2, 0, -2, -4};
+    CHECK(settings_save_user_preset(&settings, "Bass Plus", user_gains));
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    bytes[VERSION_FIELD] = 4;
+    bytes[REPLAY_GAIN_FIELD] = 0;
+    rewrite_checksum(bytes, CHECKSUM_FIELD);
+    Settings decoded;
+    CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+    CHECK_EQUAL(42, decoded.volume);
+    CHECK(decoded.eq_enabled);
+    CHECK_EQUAL(100, decoded.eq_preset);
+    CHECK_EQUAL(1, decoded.eq_user_preset_count);
+    CHECK(strcmp("Bass Plus", decoded.eq_user_presets[0].name) == 0);
+    CHECK_EQUAL(REPLAY_GAIN_OFF, decoded.replay_gain_mode);
 }
 
 static void timeout_options_end_with_never(void)
@@ -171,6 +197,7 @@ static void settings_survive_a_round_trip(void)
     for (int band = 0; band < EQ_BAND_COUNT; band++) {
         CHECK_EQUAL(original.eq_gains[band], decoded.eq_gains[band]);
     }
+    CHECK_EQUAL(original.replay_gain_mode, decoded.replay_gain_mode);
 }
 
 static void a_corrupted_file_is_rejected(void)
@@ -194,6 +221,11 @@ static void out_of_range_values_are_rejected(void)
 
     settings_encode(&settings, bytes);
     bytes[EQ_PRESET_FIELD] = 200;
+    rewrite_checksum(bytes, CHECKSUM_FIELD);
+    CHECK(!settings_decode(bytes, sizeof bytes, &settings));
+
+    settings_encode(&settings, bytes);
+    bytes[REPLAY_GAIN_FIELD] = 5;
     rewrite_checksum(bytes, CHECKSUM_FIELD);
     CHECK(!settings_decode(bytes, sizeof bytes, &settings));
 }
@@ -242,6 +274,7 @@ int main(void)
         TEST_CASE(a_version_one_file_keeps_its_values_and_gets_the_default_auto_off),
         TEST_CASE(a_version_two_file_keeps_its_values_and_gets_default_eq),
         TEST_CASE(a_version_three_file_decodes_eq_settings),
+        TEST_CASE(a_version_four_file_decodes_and_defaults_replay_gain_to_off),
         TEST_CASE(user_preset_lifecycle_and_capacity),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));

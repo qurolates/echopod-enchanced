@@ -86,6 +86,7 @@ typedef struct ScriptedSource {
     int releases;
     int closes;
     uint32_t rate;
+    ReplayGainValues replay_gain;
 } ScriptedSource;
 
 static ScriptedSource scripted;
@@ -97,7 +98,8 @@ static bool scripted_open(void *context, const char *path, uint32_t start_ms, Au
     const ScriptedSource *source_state = context;
     uint32_t rate = source_state->rate == 0 ? 44100 : source_state->rate;
     *track = (AudioTrackInfo){
-        .stream = {.sample_rate = rate, .channels = 2, .bits_per_sample = 16, .max_block = 16}};
+        .stream = {.sample_rate = rate, .channels = 2, .bits_per_sample = 16, .max_block = 16},
+        .replay_gain = source_state->replay_gain};
     return true;
 }
 
@@ -487,6 +489,107 @@ static void eq_modifies_samples_when_enabled(void)
     free(pcm.bytes);
 }
 
+static void replay_gain_track_mode_scales_pcm(void)
+{
+    scripted = (ScriptedSource){
+        .frames_left = 1,
+        .left = {10000, 10000},
+        .right = {10000, 10000},
+        .replay_gain = {
+            .has_track_gain = true,
+            .track_gain_cb = -602,
+        },
+    };
+    audio_engine_init(&engine, (AudioEngineConfig){
+        .source = {scripted_open, scripted_next, scripted_release, scripted_close, &scripted},
+        .ring = ring,
+        .ring_words = RING_WORDS,
+    });
+    audio_engine_set_replay_gain_mode(&engine, REPLAY_GAIN_TRACK);
+    CHECK(audio_engine_play(&engine, "track1", 0, 1));
+    audio_engine_pump(&engine, 0);
+    int32_t sample = (int32_t)ring[0] >> 8;
+    int32_t expected_approx = (10000 << 8) / 2;
+    int32_t diff = sample - expected_approx;
+    CHECK(diff >= -150 && diff <= 150);
+
+    audio_engine_set_replay_gain_mode(&engine, REPLAY_GAIN_OFF);
+    CHECK_EQUAL(65536, (int)audio_engine_replay_gain_mult(&engine));
+}
+
+static void replay_gain_album_mode_behavior(void)
+{
+    scripted = (ScriptedSource){
+        .frames_left = 1,
+        .replay_gain = {
+            .has_track_gain = true,
+            .track_gain_cb = -602,
+            .has_album_gain = false,
+        },
+    };
+    audio_engine_init(&engine, (AudioEngineConfig){
+        .source = {scripted_open, scripted_next, scripted_release, scripted_close, &scripted},
+        .ring = ring,
+        .ring_words = RING_WORDS,
+    });
+    audio_engine_set_replay_gain_mode(&engine, REPLAY_GAIN_ALBUM);
+    CHECK(audio_engine_play(&engine, "track_no_album_gain", 0, 1));
+    CHECK_EQUAL(65536, (int)audio_engine_replay_gain_mult(&engine));
+
+    scripted.replay_gain.has_album_gain = true;
+    scripted.replay_gain.album_gain_cb = 602;
+    CHECK(audio_engine_play(&engine, "track_with_album_gain", 0, 2));
+    CHECK(audio_engine_replay_gain_mult(&engine) > 130000);
+}
+
+static void replay_gain_peak_prevents_clipping(void)
+{
+    scripted = (ScriptedSource){
+        .frames_left = 1,
+        .replay_gain = {
+            .has_track_gain = true,
+            .track_gain_cb = 602,
+            .has_track_peak = true,
+            .track_peak_q16 = 65536,
+        },
+    };
+    audio_engine_init(&engine, (AudioEngineConfig){
+        .source = {scripted_open, scripted_next, scripted_release, scripted_close, &scripted},
+        .ring = ring,
+        .ring_words = RING_WORDS,
+    });
+    audio_engine_set_replay_gain_mode(&engine, REPLAY_GAIN_TRACK);
+    CHECK(audio_engine_play(&engine, "track_clipping", 0, 1));
+    CHECK(audio_engine_replay_gain_mult(&engine) <= 65536);
+}
+
+static void replay_gain_does_not_leak_across_tracks(void)
+{
+    scripted = (ScriptedSource){
+        .frames_left = 1,
+        .replay_gain = {
+            .has_track_gain = true,
+            .track_gain_cb = -602,
+        },
+    };
+    audio_engine_init(&engine, (AudioEngineConfig){
+        .source = {scripted_open, scripted_next, scripted_release, scripted_close, &scripted},
+        .ring = ring,
+        .ring_words = RING_WORDS,
+    });
+    audio_engine_set_replay_gain_mode(&engine, REPLAY_GAIN_TRACK);
+    CHECK(audio_engine_play(&engine, "track1", 0, 1));
+    audio_engine_pump(&engine, 0);
+
+    scripted.replay_gain = (ReplayGainValues){0};
+    scripted.frames_left = 1;
+    audio_engine_queue_next(&engine, "track2", 2);
+    audio_engine_pump(&engine, 0);
+    audio_engine_pump(&engine, 0);
+
+    CHECK_EQUAL(65536, (int)engine.target_replay_gain_mult);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -514,6 +617,10 @@ int main(void)
         TEST_CASE(a_queued_track_at_an_unsupported_rate_is_refused_with_its_rate),
         TEST_CASE(a_missing_file_is_refused),
         TEST_CASE(the_ring_never_runs_ahead_of_the_dma_by_more_than_its_size),
+        TEST_CASE(replay_gain_track_mode_scales_pcm),
+        TEST_CASE(replay_gain_album_mode_behavior),
+        TEST_CASE(replay_gain_peak_prevents_clipping),
+        TEST_CASE(replay_gain_does_not_leak_across_tracks),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

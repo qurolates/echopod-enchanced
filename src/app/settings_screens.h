@@ -12,7 +12,7 @@
 #include "ui/toast.h"
 
 enum {
-    SETTINGS_CHOICE_COUNT = 9,
+    SETTINGS_CHOICE_COUNT = 10,
     SETTINGS_ITEM_COUNT = SETTINGS_CHOICE_COUNT + 2
 };
 

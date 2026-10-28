@@ -201,6 +201,7 @@ add_library(echo_device_logic STATIC
     panel.c
     panic_text.c
     pll.c
+    replay_gain_probe.c
     start_record.c
     sd_card.c
     stall_watch.c

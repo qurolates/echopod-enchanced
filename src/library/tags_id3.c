@@ -328,8 +328,69 @@ static void read_picture_frame(TagReader *reader, const Frame *frame, bool old_s
     }
 }
 
+static void read_txxx_frame(TagReader *reader, const Frame *frame)
+{
+    uint8_t data[128];
+    uint32_t length = frame->length < sizeof data ? frame->length : (uint32_t)sizeof data;
+    if (length < 2 || !tag_read(reader, frame->offset, data, length)) {
+        return;
+    }
+    uint8_t enc = data[0];
+    if (enc == 0 || enc == 3) {
+        uint32_t desc_len = 0;
+        while (1 + desc_len < length && data[1 + desc_len] != '\0') {
+            desc_len++;
+        }
+        if (1 + desc_len >= length) {
+            return;
+        }
+        uint32_t val_offset = 1 + desc_len + 1;
+        uint32_t val_len = length - val_offset;
+        replay_gain_assign_field(&reader->tags->replay_gain, (const char *)data + 1, desc_len,
+                                 (const char *)data + val_offset, val_len);
+    } else if (enc == 1 || enc == 2) {
+        char desc[64] = {0};
+        uint32_t desc_len = 0;
+        uint32_t cursor = 1;
+        if (enc == 1 && length >= 3) {
+            cursor += 2;
+        }
+        while (cursor + 1 < length && desc_len + 1 < sizeof desc) {
+            uint16_t ch = enc == 2 ? (uint16_t)((uint16_t)data[cursor] << 8 | data[cursor + 1])
+                                   : (uint16_t)((uint16_t)data[cursor + 1] << 8 | data[cursor]);
+            cursor += 2;
+            if (ch == 0) {
+                break;
+            }
+            desc[desc_len++] = (char)(ch < 128 ? ch : '?');
+        }
+        char val[64] = {0};
+        uint32_t val_len = 0;
+        if (enc == 1 && cursor + 2 <= length) {
+            if ((data[cursor] == 0xFF && data[cursor + 1] == 0xFE) ||
+                (data[cursor] == 0xFE && data[cursor + 1] == 0xFF)) {
+                cursor += 2;
+            }
+        }
+        while (cursor + 1 < length && val_len + 1 < sizeof val) {
+            uint16_t ch = enc == 2 ? (uint16_t)((uint16_t)data[cursor] << 8 | data[cursor + 1])
+                                   : (uint16_t)((uint16_t)data[cursor + 1] << 8 | data[cursor]);
+            cursor += 2;
+            if (ch == 0) {
+                break;
+            }
+            val[val_len++] = (char)(ch < 128 ? ch : '?');
+        }
+        replay_gain_assign_field(&reader->tags->replay_gain, desc, desc_len, val, val_len);
+    }
+}
+
 static void read_frame(TagReader *reader, const Frame *frame, Id3Tag *tag)
 {
+    if (tag_same_text(frame->id, 4, "TXXX") || tag_same_text(frame->id, 3, "TXX")) {
+        read_txxx_frame(reader, frame);
+        return;
+    }
     const FrameName *name = frame_named(frame->id, tag->version);
     if (name == NULL) {
         return;

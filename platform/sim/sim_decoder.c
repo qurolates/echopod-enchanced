@@ -262,10 +262,20 @@ static bool open_codec(SimDecoder *decoder, const char *path)
     return false;
 }
 
+static bool file_read(void *context, uint32_t offset, void *buffer, uint32_t length)
+{
+    FILE *f = context;
+    if (fseek(f, (long)offset, SEEK_SET) != 0) {
+        return false;
+    }
+    return fread(buffer, 1, length, f) == length;
+}
+
 bool sim_decoder_open(SimDecoder *decoder, const char *host_path)
 {
     decoder->codec = codec_for(host_path);
     decoder->frame = 0;
+    decoder->replay_gain = (ReplayGainValues){0};
     bool opened = open_codec(decoder, host_path);
     bool usable = opened && decoder->sample_rate > 0 && decoder->channels > 0 &&
                   decoder->channels <= MAX_CHANNELS;
@@ -274,6 +284,25 @@ bool sim_decoder_open(SimDecoder *decoder, const char *host_path)
     }
     if (!usable) {
         decoder->codec = SIM_CODEC_NONE;
+    } else {
+        FILE *f = fopen(host_path, "rb");
+        if (f != NULL) {
+            fseek(f, 0, SEEK_END);
+            uint32_t size = (uint32_t)ftell(f);
+            FlacInput input = {.read = file_read, .context = f, .size = size};
+            AudioCodec c = AUDIO_CODEC_FLAC;
+            if (decoder->codec == SIM_CODEC_MP3) {
+                c = AUDIO_CODEC_MP3;
+            } else if (decoder->codec == SIM_CODEC_WAV) {
+                c = AUDIO_CODEC_WAV;
+            } else if (decoder->codec == SIM_CODEC_AAC) {
+                c = AUDIO_CODEC_AAC;
+            } else if (decoder->codec == SIM_CODEC_OPUS) {
+                c = AUDIO_CODEC_OPUS;
+            }
+            replay_gain_probe_source(input, c, &decoder->replay_gain);
+            fclose(f);
+        }
     }
     return usable;
 }

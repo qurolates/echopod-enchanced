@@ -8,6 +8,7 @@
 #include "device/aac_probe.h"
 #include "device/opus_decoder.h"
 #include "device/opus_probe.h"
+#include "device/replay_gain_probe.h"
 #include "dr_flac.h"
 #include "dr_mp3.h"
 #include "dr_wav.h"
@@ -41,6 +42,7 @@ typedef struct SimDecoder {
     uint64_t audio_bytes;
     uint64_t total_frames;
     uint64_t frame;
+    ReplayGainValues replay_gain;
 } SimDecoder;
 
 bool sim_decoder_open(SimDecoder *decoder, const char *host_path);

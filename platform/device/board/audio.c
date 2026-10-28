@@ -505,6 +505,18 @@ void hal_audio_set_eq(bool enabled, const int8_t *gains)
     audio_engine_set_eq(&engine, enabled, gains);
 }
 
+void hal_audio_set_replay_gain_mode(ReplayGainMode mode)
+{
+    ensure_engine();
+    audio_engine_set_replay_gain_mode(&engine, mode);
+}
+
+ReplayGainMode hal_audio_replay_gain_mode(void)
+{
+    ensure_engine();
+    return audio_engine_replay_gain_mode(&engine);
+}
+
 void hal_audio_set_dsp_bypass(bool bypass)
 {
     dsp_bypass_enabled = bypass;
@@ -673,6 +685,8 @@ HalAudioStats hal_audio_stats(void)
         result.produced = engine.produced;
         result.eq_enabled = engine.eq.enabled;
         result.eq_flat = eq_is_flat(&engine.eq);
+        result.replay_gain_mode = engine.replay_gain_mode;
+        result.replay_gain_mult = engine.replay_gain_mult;
         result.underruns = audio_engine_stats(&engine).underruns;
     }
     if (!engine_ready || !transferring || tone_active) {
@@ -682,8 +696,7 @@ HalAudioStats hal_audio_stats(void)
     result.elapsed_us = hal_clock_microseconds() - output_started_us;
     uint32_t rate = audio_engine_rate(&engine);
     if (rate > 0) {
-        result.buffered_ms = (uint32_t)((uint64_t)audio_engine_buffered(&engine, consumed) *
-                                        MILLISECONDS_PER_SECOND / rate);
+        result.buffered_ms = audio_engine_buffered(&engine, consumed) * (uint32_t)MILLISECONDS_PER_SECOND / rate;
     }
     return result;
 }
