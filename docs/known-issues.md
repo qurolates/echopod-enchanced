@@ -33,5 +33,6 @@ EchoPod is early firmware made by one person and tested on one player. It comes 
 
 ## Not there yet
 
-- No Bluetooth audio, EQ, ReplayGain, lyrics or USB DAC mode.
+- No Bluetooth audio, lyrics or USB DAC mode.
 - The 4.4 mm balanced output hasn't been checked on hardware.
+- **ReplayGain:** Core DSP pipeline, ID3/Vorbis/MP4 tag probing, 5-band EQ integration and settings are implemented and pass all unit/host test fixtures, but comprehensive end-to-end listening validation on physical hardware with various real-world ReplayGain-tagged tracks is not yet fully verified.
