@@ -167,22 +167,38 @@ static bool embedded_cover(CoverState *state, const CoverJob *job, uint32_t trac
     CachedPicture picture;
     if (state->has_cache &&
         track_cache_find_picture(&state->cache_reader, state->path + 1, &picture)) {
-        if (picture.kind != TAG_PICTURE_RAW || picture.length < 16) {
+        if (picture.length < 16) {
             *decoded = false;
             return false;
         }
-        ByteSource source;
-        uint32_t size = 0;
-        if (!job->files.open_file(job->files.context, state->path, &source, &size)) {
-            return false;
-        }
-        if (picture.offset > size || picture.length > size - picture.offset) {
+        if (picture.kind == TAG_PICTURE_RAW) {
+            ByteSource source;
+            uint32_t size = 0;
+            if (!job->files.open_file(job->files.context, state->path, &source, &size)) {
+                return false;
+            }
+            if (picture.offset > size || picture.length > size - picture.offset) {
+                job->files.close_file(job->files.context);
+                return false;
+            }
+            *decoded = decode_from(state, source, picture.offset, picture.length);
             job->files.close_file(job->files.context);
-            return false;
+            return true;
         }
-        *decoded = decode_from(state, source, picture.offset, picture.length);
-        job->files.close_file(job->files.context);
-        return true;
+        if (picture.kind == TAG_PICTURE_BASE64_FLAC_BLOCK) {
+            ByteSource source;
+            uint32_t size = 0;
+            if (!job->files.open_file(job->files.context, state->path, &source, &size)) {
+                return false;
+            }
+            *decoded = tags_decode_ogg_picture(source, size, picture.offset, picture.length,
+                                               state->decode_memory, state->decode_size,
+                                               state->full, state->half);
+            job->files.close_file(job->files.context);
+            return true;
+        }
+        *decoded = false;
+        return false;
     }
     ByteSource source;
     uint32_t size = 0;
@@ -192,10 +208,20 @@ static bool embedded_cover(CoverState *state, const CoverJob *job, uint32_t trac
     TagFormat format = track_tags_format_for_name(state->path);
     bool tagged = track_tags_read(source, size, format, &state->tags);
     TagPicture pic = state->tags.picture;
-    bool found = tagged && pic.kind == TAG_PICTURE_RAW && pic.length > 0;
-    *decoded = found && decode_from(state, source, pic.offset, pic.length);
+    if (tagged && pic.kind == TAG_PICTURE_RAW && pic.length >= 16) {
+        *decoded = decode_from(state, source, pic.offset, pic.length);
+        job->files.close_file(job->files.context);
+        return true;
+    }
+    if (tagged && pic.kind == TAG_PICTURE_BASE64_FLAC_BLOCK && pic.length >= 16) {
+        *decoded = tags_decode_ogg_picture(source, size, pic.offset, pic.length,
+                                           state->decode_memory, state->decode_size,
+                                           state->full, state->half);
+        job->files.close_file(job->files.context);
+        return true;
+    }
     job->files.close_file(job->files.context);
-    return found;
+    return false;
 }
 
 static char lower(char character)
@@ -501,7 +527,8 @@ static bool can_keep_existing_covers(CoverState *state, const CoverJob *job, uin
         bool has_pic =
             state->has_cache &&
             track_cache_find_picture(&state->cache_reader, state->path + 1, &picture) &&
-            picture.kind == TAG_PICTURE_RAW && picture.length >= 16;
+            (picture.kind == TAG_PICTURE_RAW || picture.kind == TAG_PICTURE_BASE64_FLAC_BLOCK) &&
+            picture.length >= 16;
         if (has_pic) {
             uint8_t flags = 0;
             if (!track_cache_find_flags(&state->cache_reader, state->path + 1, &flags) ||
@@ -542,7 +569,8 @@ static ScanResult build_albums(CoverState *state, const CoverJob *job, CoverStat
                 CachedPicture picture;
                 uint8_t flags = 0;
                 if (track_cache_find_picture(&state->cache_reader, state->path + 1, &picture) &&
-                    picture.kind == TAG_PICTURE_RAW && picture.length >= 16 &&
+                    (picture.kind == TAG_PICTURE_RAW || picture.kind == TAG_PICTURE_BASE64_FLAC_BLOCK) &&
+                    picture.length >= 16 &&
                     track_cache_find_flags(&state->cache_reader, state->path + 1, &flags) &&
                     (flags & TRACK_FLAG_CACHE_HIT)) {
                     if (!copy_existing_cover(state, job, key, old_record)) {

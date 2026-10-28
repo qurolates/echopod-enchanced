@@ -1,5 +1,6 @@
 #include <stddef.h>
 
+#include "image/cover_image.h"
 #include "tags_internal.h"
 
 enum {
@@ -280,10 +281,17 @@ typedef struct OggStream {
     TagReader *reader;
     OggPage page;
     uint32_t page_start;
+    uint32_t initial_page_offset;
 } OggStream;
 
 static bool stream_seek(OggStream *stream, uint32_t offset)
 {
+    if (offset < stream->page_start) {
+        if (!read_page(stream->reader, stream->initial_page_offset, &stream->page)) {
+            return false;
+        }
+        stream->page_start = 0;
+    }
     while (offset >= stream->page_start + stream->page.body_length) {
         uint32_t next = stream->page.offset + stream->page.header_length + stream->page.body_length;
         stream->page_start += stream->page.body_length;
@@ -298,9 +306,6 @@ static bool read_stream_bytes(void *context, uint32_t offset, void *buffer, uint
 {
     OggStream *stream = context;
     uint8_t *out = buffer;
-    if (offset < stream->page_start) {
-        return false;
-    }
     while (length > 0) {
         if (!stream_seek(stream, offset)) {
             return false;
@@ -360,8 +365,9 @@ bool tags_read_ogg(TagReader *reader)
     }
     uint32_t rate = is_opus ? 48000 : tag_le32(identification + 12);
     uint16_t pre_skip = is_opus ? tag_le16(identification + 10) : 0;
-    OggStream stream = {.reader = reader, .page_start = 0};
-    if (!read_page(reader, first.header_length + first.body_length, &stream.page)) {
+    uint32_t second_page = first.header_length + first.body_length;
+    OggStream stream = {.reader = reader, .page_start = 0, .initial_page_offset = second_page};
+    if (!read_page(reader, second_page, &stream.page)) {
         return false;
     }
     ByteSource source = {.read = read_stream_bytes, .context = &stream};
@@ -384,4 +390,138 @@ bool tags_read_ogg(TagReader *reader)
         tag_set_duration(reader, (double)samples / (double)rate);
     }
     return true;
+}
+
+typedef struct OggBase64Picture {
+    OggStream *stream;
+    uint32_t b64_offset;
+    uint32_t b64_length;
+    uint32_t image_binary_start;
+    uint32_t image_binary_length;
+} OggBase64Picture;
+
+static bool read_base64_binary(OggBase64Picture *pic, uint32_t binary_pos, void *buffer,
+                               uint32_t count)
+{
+    uint8_t *out = buffer;
+    uint32_t block_index = binary_pos / 3;
+    uint32_t phase = binary_pos % 3;
+    uint32_t char_pos = pic->b64_offset + block_index * 4;
+    while (count > 0) {
+        if (char_pos >= pic->b64_offset + pic->b64_length) {
+            return false;
+        }
+        uint32_t left_chars = (pic->b64_offset + pic->b64_length) - char_pos;
+        uint32_t chunk_chars = left_chars < 64 ? left_chars : 64;
+        chunk_chars &= ~3u;
+        if (chunk_chars == 0) {
+            return false;
+        }
+        uint8_t b64[64];
+        if (!read_stream_bytes(pic->stream, char_pos, b64, chunk_chars)) {
+            return false;
+        }
+        uint8_t decoded[48];
+        uint32_t dec_len = 0;
+        for (uint32_t index = 0; index < chunk_chars; index += 4) {
+            int v0 = base64_value(b64[index]);
+            int v1 = base64_value(b64[index + 1]);
+            int v2 = b64[index + 2] == '=' ? 0 : base64_value(b64[index + 2]);
+            int v3 = b64[index + 3] == '=' ? 0 : base64_value(b64[index + 3]);
+            if (v0 < 0 || v1 < 0 || v2 < 0 || v3 < 0) {
+                return false;
+            }
+            decoded[dec_len++] = (uint8_t)((v0 << 2) | (v1 >> 4));
+            if (b64[index + 2] != '=') {
+                decoded[dec_len++] = (uint8_t)(((v1 & 0x0F) << 4) | (v2 >> 2));
+            }
+            if (b64[index + 3] != '=') {
+                decoded[dec_len++] = (uint8_t)(((v2 & 0x03) << 6) | v3);
+            }
+        }
+        if (phase >= dec_len) {
+            return false;
+        }
+        uint32_t avail = dec_len - phase;
+        uint32_t take = avail < count ? avail : count;
+        for (uint32_t index = 0; index < take; index++) {
+            out[index] = decoded[phase + index];
+        }
+        out += take;
+        count -= take;
+        char_pos += chunk_chars;
+        phase = 0;
+    }
+    return true;
+}
+
+static bool base64_image_read(void *context, uint32_t offset, void *buffer, uint32_t length)
+{
+    OggBase64Picture *pic = context;
+    if (offset > pic->image_binary_length || length > pic->image_binary_length - offset) {
+        return false;
+    }
+    return read_base64_binary(pic, pic->image_binary_start + offset, buffer, length);
+}
+
+bool tags_decode_ogg_picture(ByteSource source, uint32_t size, uint32_t b64_offset,
+                             uint32_t b64_length, void *memory, uint32_t memory_size,
+                             uint16_t *full, uint16_t *half)
+{
+    TagReader reader = {.source = source, .size = size, .tags = NULL};
+    OggPage first;
+    uint8_t identification[16];
+    if (!read_page(&reader, 0, &first) || first.body_length < sizeof identification ||
+        !tag_read(&reader, first.header_length, identification, sizeof identification)) {
+        return false;
+    }
+    bool is_vorbis = identification[0] == 1 && tag_same_text((const char *)identification + 1, 6, "vorbis");
+    bool is_opus = tag_same_text((const char *)identification, 8, "OpusHead");
+    if (!is_vorbis && !is_opus) {
+        return false;
+    }
+    uint32_t second_page = first.header_length + first.body_length;
+    OggStream stream = {.reader = &reader, .page_start = 0, .initial_page_offset = second_page};
+    if (!read_page(&reader, second_page, &stream.page)) {
+        return false;
+    }
+    OggBase64Picture pic = {
+        .stream = &stream,
+        .b64_offset = b64_offset,
+        .b64_length = b64_length,
+        .image_binary_start = 0,
+        .image_binary_length = 0,
+    };
+    uint8_t word[8];
+    if (!read_base64_binary(&pic, 0, word, 8)) {
+        return false;
+    }
+    uint32_t mime_len = tag_be32(word + 4);
+    uint32_t cursor = 8 + mime_len;
+    if (!read_base64_binary(&pic, cursor, word, 4)) {
+        return false;
+    }
+    uint32_t desc_len = tag_be32(word);
+    cursor += 4 + desc_len + 16;
+    if (!read_base64_binary(&pic, cursor, word, 4)) {
+        return false;
+    }
+    uint32_t data_len = tag_be32(word);
+    cursor += 4;
+    if (data_len < 16) {
+        return false;
+    }
+    uint32_t max_binary = (b64_length / 4) * 3 + 3;
+    if (cursor > max_binary || data_len > max_binary - cursor) {
+        return false;
+    }
+    pic.image_binary_start = cursor;
+    pic.image_binary_length = data_len;
+    ImageSource image = {
+        .read = base64_image_read,
+        .context = &pic,
+        .offset = 0,
+        .length = data_len,
+    };
+    return cover_image_decode(image, memory, memory_size, full, half) == COVER_IMAGE_OK;
 }

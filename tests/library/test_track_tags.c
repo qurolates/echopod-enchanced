@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "library/covers.h"
 #include "library/track_tags.h"
 #include "memory_source.h"
 
@@ -39,10 +40,10 @@ typedef struct Fixture {
     MemorySource memory;
 } Fixture;
 
-static bool load(Fixture *fixture, const char *name)
+static bool load_relative(Fixture *fixture, const char *relative)
 {
     char path[512];
-    snprintf(path, sizeof path, "%s/tags/%s", ECHO_FIXTURE_DIR, name);
+    snprintf(path, sizeof path, "%s/%s", ECHO_FIXTURE_DIR, relative);
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         return false;
@@ -55,6 +56,13 @@ static bool load(Fixture *fixture, const char *name)
     fclose(file);
     fixture->memory = (MemorySource){.bytes = fixture->bytes, .size = fixture->size};
     return read;
+}
+
+static bool load(Fixture *fixture, const char *name)
+{
+    char path[512];
+    snprintf(path, sizeof path, "tags/%s", name);
+    return load_relative(fixture, path);
 }
 
 static bool read_fixture(const char *name, TrackTags *tags)
@@ -261,6 +269,39 @@ static void replay_gain_metadata_is_extracted_for_formats(void)
     free(mp3_fix.bytes);
 }
 
+static void opus_tags_with_and_without_embedded_cover(void)
+{
+    Fixture with_cover;
+    CHECK(load_relative(&with_cover, "opus/cover.opus"));
+    TrackTags tags;
+    memset(&tags, 0, sizeof tags);
+    CHECK(track_tags_read(memory_source(&with_cover.memory), with_cover.size, TAG_FORMAT_OGG, &tags));
+    CHECK_EQUAL(0, strcmp("Opus Song", tags.text[TAG_TITLE]));
+    CHECK_EQUAL(0, strcmp("Opus Artist", tags.text[TAG_ARTIST]));
+    CHECK_EQUAL(0, strcmp("Opus Album", tags.text[TAG_ALBUM]));
+    CHECK_EQUAL(TAG_PICTURE_BASE64_FLAC_BLOCK, tags.picture.kind);
+    CHECK(tags.picture.front);
+    CHECK(tags.picture.length > 0);
+    static uint8_t memory[384 * 1024];
+    static uint16_t full[COVER_FULL_PIXELS];
+    static uint16_t half[COVER_HALF_PIXELS];
+    CHECK(tags_decode_ogg_picture(memory_source(&with_cover.memory), with_cover.size,
+                                  tags.picture.offset, tags.picture.length,
+                                  memory, sizeof memory, full, half));
+    free(with_cover.bytes);
+
+    Fixture no_cover;
+    CHECK(load_relative(&no_cover, "opus/tagged.opus"));
+    memset(&tags, 0, sizeof tags);
+    CHECK(track_tags_read(memory_source(&no_cover.memory), no_cover.size, TAG_FORMAT_OGG, &tags));
+    CHECK_EQUAL(0, strcmp("Opus Song", tags.text[TAG_TITLE]));
+    CHECK_EQUAL(0, strcmp("Opus Artist", tags.text[TAG_ARTIST]));
+    CHECK_EQUAL(0, strcmp("Opus Album", tags.text[TAG_ALBUM]));
+    CHECK_EQUAL(TAG_PICTURE_NONE, tags.picture.kind);
+    CHECK_EQUAL(0u, tags.picture.length);
+    free(no_cover.bytes);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -271,6 +312,7 @@ int main(void)
         TEST_CASE(a_truncated_file_fails_cleanly),
         TEST_CASE(damaged_files_never_read_outside_the_file),
         TEST_CASE(replay_gain_metadata_is_extracted_for_formats),
+        TEST_CASE(opus_tags_with_and_without_embedded_cover),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }
