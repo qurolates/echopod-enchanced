@@ -76,14 +76,20 @@ bool track_cache_open(TrackCacheReader *reader, ByteSource source, uint32_t size
     if (count > index_capacity || index_offset > size || index_bytes > size - index_offset) {
         return false;
     }
-    for (uint32_t index = 0; index < count; index++) {
-        uint8_t entry[TRACK_CACHE_INDEX_ENTRY_SIZE];
+    uint8_t buffer[512];
+    uint32_t index = 0;
+    while (index < count) {
+        uint32_t chunk_entries = count - index < 64 ? count - index : 64;
+        uint32_t chunk_bytes = chunk_entries * TRACK_CACHE_INDEX_ENTRY_SIZE;
         if (!source.read(source.context, index_offset + index * TRACK_CACHE_INDEX_ENTRY_SIZE,
-                         entry, sizeof entry)) {
+                         buffer, chunk_bytes)) {
             return false;
         }
-        index_memory[index].path_hash = get32(entry);
-        index_memory[index].offset = get32(entry + 4);
+        for (uint32_t i = 0; i < chunk_entries; i++) {
+            index_memory[index + i].path_hash = get32(buffer + i * TRACK_CACHE_INDEX_ENTRY_SIZE);
+            index_memory[index + i].offset = get32(buffer + i * TRACK_CACHE_INDEX_ENTRY_SIZE + 4);
+        }
+        index += chunk_entries;
     }
     reader->count = count;
     return true;
@@ -114,12 +120,6 @@ static int32_t find_index_slot(const TrackCacheReader *reader, uint32_t path_has
     return -1;
 }
 
-static bool read_record_header(const TrackCacheReader *reader, uint32_t offset, uint8_t *header)
-{
-    return offset + TRACK_CACHE_RECORD_HEADER <= reader->size &&
-           reader->source.read(reader->source.context, offset, header,
-                               TRACK_CACHE_RECORD_HEADER);
-}
 
 bool track_cache_find(const TrackCacheReader *reader, const char *path, uint32_t size,
                       uint32_t modified, CachedTrack *track, char *text_buffer,
@@ -134,96 +134,145 @@ bool track_cache_find(const TrackCacheReader *reader, const char *path, uint32_t
     for (uint32_t index = (uint32_t)slot;
          index < reader->count && reader->index[index].path_hash == hash; index++) {
         uint32_t offset = reader->index[index].offset;
-        uint8_t header[TRACK_CACHE_RECORD_HEADER];
-        if (!read_record_header(reader, offset, header)) {
+        if (offset + TRACK_CACHE_RECORD_HEADER > reader->size) {
             continue;
         }
-        if (get32(header) != size || get32(header + 4) != modified) {
+        uint8_t buffer[1024];
+        uint32_t to_read =
+            reader->size - offset < sizeof buffer ? reader->size - offset : (uint32_t)sizeof buffer;
+        if (!reader->source.read(reader->source.context, offset, buffer, to_read)) {
             continue;
         }
-        uint16_t stored_path_len = get16(header + 26);
-        if (stored_path_len != path_len) {
+        if (get32(buffer) != size || get32(buffer + 4) != modified) {
             continue;
         }
-        uint32_t text_offset = offset + TRACK_CACHE_RECORD_HEADER;
-        char disk_path[SCAN_PATH_CAPACITY];
-        if (stored_path_len >= sizeof disk_path ||
-            !reader->source.read(reader->source.context, text_offset, disk_path,
-                                 stored_path_len)) {
+        uint16_t stored_path_len = get16(buffer + 26);
+        if (stored_path_len != path_len ||
+            (uint32_t)TRACK_CACHE_RECORD_HEADER + (uint32_t)stored_path_len > to_read) {
             continue;
         }
-        disk_path[stored_path_len] = '\0';
-        if (!same_text(disk_path, path, path_len)) {
+        if (!same_text((const char *)buffer + TRACK_CACHE_RECORD_HEADER, path, path_len)) {
             continue;
         }
-        uint16_t title_len = get16(header + 28);
-        uint16_t artist_len = get16(header + 30);
-        uint16_t album_artist_len = get16(header + 32);
-        uint16_t album_len = get16(header + 34);
-        uint16_t genre_len = get16(header + 36);
+        uint16_t title_len = get16(buffer + 28);
+        uint16_t artist_len = get16(buffer + 30);
+        uint16_t album_artist_len = get16(buffer + 32);
+        uint16_t album_len = get16(buffer + 34);
+        uint16_t genre_len = get16(buffer + 36);
         uint32_t total_strings =
-            (uint32_t)title_len + artist_len + album_artist_len + album_len + genre_len + 5u;
-        if (total_strings > text_capacity ||
-            text_offset + stored_path_len + total_strings > reader->size) {
+            (uint32_t)title_len + (uint32_t)artist_len + (uint32_t)album_artist_len +
+            (uint32_t)album_len + (uint32_t)genre_len + 5u;
+        uint32_t record_len = (uint32_t)TRACK_CACHE_RECORD_HEADER + (uint32_t)stored_path_len +
+                              (uint32_t)title_len + (uint32_t)artist_len +
+                              (uint32_t)album_artist_len + (uint32_t)album_len + (uint32_t)genre_len;
+        if (total_strings > text_capacity || offset + record_len > reader->size) {
             return false;
         }
-        text_offset += stored_path_len;
+        const uint8_t *payload = buffer;
+        uint8_t overflow[2048];
+        if (record_len > to_read) {
+            if (record_len > sizeof overflow ||
+                !reader->source.read(reader->source.context, offset, overflow, record_len)) {
+                return false;
+            }
+            payload = overflow;
+        }
+        uint32_t text_offset = TRACK_CACHE_RECORD_HEADER + stored_path_len;
         char *cursor = text_buffer;
+
         track->title = cursor;
-        if (title_len > 0 &&
-            !reader->source.read(reader->source.context, text_offset, cursor, title_len)) {
-            return false;
+        for (uint32_t i = 0; i < title_len; i++) {
+            cursor[i] = (char)payload[text_offset + i];
         }
         cursor[title_len] = '\0';
         cursor += title_len + 1;
         text_offset += title_len;
 
         track->artist = cursor;
-        if (artist_len > 0 &&
-            !reader->source.read(reader->source.context, text_offset, cursor, artist_len)) {
-            return false;
+        for (uint32_t i = 0; i < artist_len; i++) {
+            cursor[i] = (char)payload[text_offset + i];
         }
         cursor[artist_len] = '\0';
         cursor += artist_len + 1;
         text_offset += artist_len;
 
         track->album_artist = cursor;
-        if (album_artist_len > 0 &&
-            !reader->source.read(reader->source.context, text_offset, cursor, album_artist_len)) {
-            return false;
+        for (uint32_t i = 0; i < album_artist_len; i++) {
+            cursor[i] = (char)payload[text_offset + i];
         }
         cursor[album_artist_len] = '\0';
         cursor += album_artist_len + 1;
         text_offset += album_artist_len;
 
         track->album = cursor;
-        if (album_len > 0 &&
-            !reader->source.read(reader->source.context, text_offset, cursor, album_len)) {
-            return false;
+        for (uint32_t i = 0; i < album_len; i++) {
+            cursor[i] = (char)payload[text_offset + i];
         }
         cursor[album_len] = '\0';
         cursor += album_len + 1;
         text_offset += album_len;
 
         track->genre = cursor;
-        if (genre_len > 0 &&
-            !reader->source.read(reader->source.context, text_offset, cursor, genre_len)) {
-            return false;
+        for (uint32_t i = 0; i < genre_len; i++) {
+            cursor[i] = (char)payload[text_offset + i];
         }
         cursor[genre_len] = '\0';
 
         track->size = size;
         track->modified = modified;
-        track->duration_ms = get32(header + 8);
-        track->year = get16(header + 12);
-        track->disc = header[14];
-        track->number = header[15];
-        track->flags = header[38];
-        track->picture = (CachedPicture){.kind = header[16],
-                                         .front = header[17],
-                                         .offset = get32(header + 18),
-                                         .length = get32(header + 22)};
+        track->duration_ms = get32(buffer + 8);
+        track->year = get16(buffer + 12);
+        track->disc = buffer[14];
+        track->number = buffer[15];
+        track->flags = buffer[38];
+        track->picture = (CachedPicture){.kind = buffer[16],
+                                         .front = buffer[17],
+                                         .offset = get32(buffer + 18),
+                                         .length = get32(buffer + 22)};
         track->path = path;
+        return true;
+    }
+    return false;
+}
+
+bool track_cache_find_picture_and_flags(const TrackCacheReader *reader, const char *path,
+                                        CachedPicture *picture, uint8_t *flags)
+{
+    uint32_t hash = path_hash_of(path);
+    int32_t slot = find_index_slot(reader, hash);
+    if (slot < 0) {
+        return false;
+    }
+    uint32_t path_len = text_length(path);
+    for (uint32_t index = (uint32_t)slot;
+         index < reader->count && reader->index[index].path_hash == hash; index++) {
+        uint32_t offset = reader->index[index].offset;
+        if (offset + TRACK_CACHE_RECORD_HEADER > reader->size) {
+            continue;
+        }
+        uint8_t buffer[512];
+        uint32_t to_read =
+            reader->size - offset < sizeof buffer ? reader->size - offset : (uint32_t)sizeof buffer;
+        if (!reader->source.read(reader->source.context, offset, buffer, to_read)) {
+            continue;
+        }
+        uint16_t stored_path_len = get16(buffer + 26);
+        if (stored_path_len != path_len ||
+            (uint32_t)TRACK_CACHE_RECORD_HEADER + (uint32_t)stored_path_len > to_read) {
+            continue;
+        }
+        if (!same_text((const char *)buffer + TRACK_CACHE_RECORD_HEADER, path, path_len)) {
+            continue;
+        }
+        if (picture != NULL) {
+            *picture = (CachedPicture){.kind = buffer[16],
+                                       .front = buffer[17],
+                                       .offset = get32(buffer + 18),
+                                       .length = get32(buffer + 22)};
+        }
+        if (flags != NULL) {
+            *flags = buffer[38];
+        }
         return true;
     }
     return false;
@@ -232,77 +281,12 @@ bool track_cache_find(const TrackCacheReader *reader, const char *path, uint32_t
 bool track_cache_find_picture(const TrackCacheReader *reader, const char *path,
                               CachedPicture *picture)
 {
-    uint32_t hash = path_hash_of(path);
-    int32_t slot = find_index_slot(reader, hash);
-    if (slot < 0) {
-        return false;
-    }
-    uint32_t path_len = text_length(path);
-    for (uint32_t index = (uint32_t)slot;
-         index < reader->count && reader->index[index].path_hash == hash; index++) {
-        uint32_t offset = reader->index[index].offset;
-        uint8_t header[TRACK_CACHE_RECORD_HEADER];
-        if (!read_record_header(reader, offset, header)) {
-            continue;
-        }
-        uint16_t stored_path_len = get16(header + 26);
-        if (stored_path_len != path_len) {
-            continue;
-        }
-        char disk_path[SCAN_PATH_CAPACITY];
-        if (stored_path_len >= sizeof disk_path ||
-            offset + TRACK_CACHE_RECORD_HEADER + stored_path_len > reader->size ||
-            !reader->source.read(reader->source.context, offset + TRACK_CACHE_RECORD_HEADER,
-                                 disk_path, stored_path_len)) {
-            continue;
-        }
-        disk_path[stored_path_len] = '\0';
-        if (!same_text(disk_path, path, path_len)) {
-            continue;
-        }
-        *picture = (CachedPicture){.kind = header[16],
-                                   .front = header[17],
-                                   .offset = get32(header + 18),
-                                   .length = get32(header + 22)};
-        return true;
-    }
-    return false;
+    return track_cache_find_picture_and_flags(reader, path, picture, NULL);
 }
 
 bool track_cache_find_flags(const TrackCacheReader *reader, const char *path, uint8_t *flags)
 {
-    uint32_t hash = path_hash_of(path);
-    int32_t slot = find_index_slot(reader, hash);
-    if (slot < 0) {
-        return false;
-    }
-    uint32_t path_len = text_length(path);
-    for (uint32_t index = (uint32_t)slot;
-         index < reader->count && reader->index[index].path_hash == hash; index++) {
-        uint32_t offset = reader->index[index].offset;
-        uint8_t header[TRACK_CACHE_RECORD_HEADER];
-        if (!read_record_header(reader, offset, header)) {
-            continue;
-        }
-        uint16_t stored_path_len = get16(header + 26);
-        if (stored_path_len != path_len) {
-            continue;
-        }
-        char disk_path[SCAN_PATH_CAPACITY];
-        if (stored_path_len >= sizeof disk_path ||
-            offset + TRACK_CACHE_RECORD_HEADER + stored_path_len > reader->size ||
-            !reader->source.read(reader->source.context, offset + TRACK_CACHE_RECORD_HEADER,
-                                 disk_path, stored_path_len)) {
-            continue;
-        }
-        disk_path[stored_path_len] = '\0';
-        if (!same_text(disk_path, path, path_len)) {
-            continue;
-        }
-        *flags = header[38];
-        return true;
-    }
-    return false;
+    return track_cache_find_picture_and_flags(reader, path, NULL, flags);
 }
 
 static bool flush_writer(TrackCacheWriter *writer)

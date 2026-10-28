@@ -9,6 +9,7 @@
 #include "library/library.h"
 #include "library/library_scan.h"
 #include "library/track_cache.h"
+#include "library/track_tags.h"
 #include "library_compare.h"
 #include "sim_storage.h"
 
@@ -672,6 +673,271 @@ static void cover_build_skips_when_covers_unchanged(void)
     CHECK_EQUAL(covers_len_before, covers.length);
 }
 
+static void adding_an_album_reuses_existing_covers(void)
+{
+    static Output output_a;
+    static Output output_b;
+    static Output covers_a;
+    static Output covers_b;
+    static Output cache_a;
+    static Output cache_b;
+    static uint8_t memory[MEMORY_SIZE];
+    covers_a.length = 0;
+    covers_b.length = 0;
+    cache_a.length = 0;
+    cache_b.length = 0;
+
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Song.mp3");
+    tree_add("/Artist A/Album 1/02 - Song.mp3");
+
+    ScanStats sstats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_a, &sstats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache_a}, sizeof cache_a.bytes));
+    CHECK_EQUAL(2u, sstats.tracks);
+
+    CoverStats cstats;
+    CoverJob job_a = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .library = {output_read, &output_a},
+        .library_size = output_a.length,
+        .sink = {write_output, &covers_a},
+        .capacity = sizeof covers_a.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache_a},
+        .cache_size = cache_a.length,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&job_a, &cstats));
+    CHECK_EQUAL(1u, cstats.albums);
+
+    tree_add("/Artist B/Album 2/01 - Song.mp3");
+
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_b, &sstats,
+                                          (ByteSource){output_read, &cache_a}, cache_a.length,
+                                          (ByteSink){write_output, &cache_b}, sizeof cache_b.bytes));
+    CHECK_EQUAL(3u, sstats.tracks);
+
+    TrackCacheReader reader;
+    TrackCacheIndexEntry idx[16];
+    CHECK(track_cache_open(&reader, (ByteSource){output_read, &cache_b}, cache_b.length, idx, 16));
+    uint8_t flags_a = 0;
+    uint8_t flags_b = 0;
+    CHECK(track_cache_find_flags(&reader, "Artist A/Album 1/01 - Song.mp3", &flags_a));
+    CHECK(track_cache_find_flags(&reader, "Artist B/Album 2/01 - Song.mp3", &flags_b));
+    CHECK_EQUAL(TRACK_FLAG_CACHE_HIT, flags_a & TRACK_FLAG_CACHE_HIT);
+    CHECK_EQUAL(0, flags_b & TRACK_FLAG_CACHE_HIT);
+
+    CoverJob job_b = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .library = {output_read, &output_b},
+        .library_size = output_b.length,
+        .sink = {write_output, &covers_b},
+        .capacity = sizeof covers_b.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache_b},
+        .cache_size = cache_b.length,
+        .existing_covers = {output_read, &covers_a},
+        .existing_covers_size = covers_a.length,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&job_b, &cstats));
+    CHECK_EQUAL(2u, cstats.albums);
+}
+
+static void adding_a_track_to_an_existing_album_shares_cover(void)
+{
+    static Output output_a;
+    static Output output_b;
+    static Output covers_a;
+    static Output covers_b;
+    static Output cache_a;
+    static Output cache_b;
+    static uint8_t memory[MEMORY_SIZE];
+    covers_a.length = 0;
+    covers_b.length = 0;
+    cache_a.length = 0;
+    cache_b.length = 0;
+
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Track.mp3");
+
+    ScanStats sstats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_a, &sstats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache_a}, sizeof cache_a.bytes));
+    CHECK_EQUAL(1u, sstats.tracks);
+
+    CoverStats cstats;
+    CoverJob job_a = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .library = {output_read, &output_a},
+        .library_size = output_a.length,
+        .sink = {write_output, &covers_a},
+        .capacity = sizeof covers_a.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache_a},
+        .cache_size = cache_a.length,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&job_a, &cstats));
+    CHECK_EQUAL(1u, cstats.albums);
+
+    tree_add("/Artist A/Album 1/02 - Track.mp3");
+
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output_b, &sstats,
+                                          (ByteSource){output_read, &cache_a}, cache_a.length,
+                                          (ByteSink){write_output, &cache_b}, sizeof cache_b.bytes));
+    CHECK_EQUAL(2u, sstats.tracks);
+
+    Library library;
+    CHECK_EQUAL(LIBRARY_OK,
+                library_open(&library, (ByteSource){output_read, &output_b}, output_b.length));
+    CHECK_EQUAL(1u, library_count(&library, LIBRARY_ALBUMS));
+    CHECK_EQUAL(2u, library_count(&library, LIBRARY_TRACKS));
+
+    CoverJob job_b = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .library = {output_read, &output_b},
+        .library_size = output_b.length,
+        .sink = {write_output, &covers_b},
+        .capacity = sizeof covers_b.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache_b},
+        .cache_size = cache_b.length,
+        .existing_covers = {output_read, &covers_a},
+        .existing_covers_size = covers_a.length,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&job_b, &cstats));
+    CHECK_EQUAL(1u, cstats.albums);
+}
+
+static void multiple_tracks_in_same_album_share_single_cover_record(void)
+{
+    static Output output;
+    static Output covers;
+    static Output cache;
+    static uint8_t memory[MEMORY_SIZE];
+    covers.length = 0;
+    cache.length = 0;
+
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Track.mp3");
+    tree_add("/Artist A/Album 1/02 - Track.mp3");
+    tree_add("/Artist A/Album 1/03 - Track.mp3");
+
+    ScanStats sstats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output, &sstats, (ByteSource){NULL, NULL}, 0,
+                                          (ByteSink){write_output, &cache}, sizeof cache.bytes));
+    CHECK_EQUAL(3u, sstats.tracks);
+
+    CoverStats cstats;
+    CoverJob job = {
+        .files = {tree_open_dir, tree_next_entry, tree_close_dir, tree_open_file, tree_close_file,
+                  NULL},
+        .library = {output_read, &output},
+        .library_size = output.length,
+        .sink = {write_output, &covers},
+        .capacity = sizeof covers.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache},
+        .cache_size = cache.length,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&job, &cstats));
+    CHECK_EQUAL(1u, cstats.albums);
+
+    Library library;
+    CHECK_EQUAL(LIBRARY_OK,
+                library_open(&library, (ByteSource){output_read, &output}, output.length));
+    CHECK_EQUAL(1u, library_count(&library, LIBRARY_ALBUMS));
+    CHECK_EQUAL(3u, library_count(&library, LIBRARY_TRACKS));
+}
+
+static void opus_embedded_cover_is_extracted_and_cached(void)
+{
+    static Output output;
+    static Output covers;
+    static Output cache;
+    static uint8_t memory[MEMORY_SIZE];
+    static HostFiles files;
+    covers.length = 0;
+    cache.length = 0;
+
+    sim_storage_configure(ECHO_FIXTURE_DIR "/opus", NULL);
+    ScanStats sstats;
+    ScanJob scan_job = {
+        .files = {open_dir, next_entry, close_dir, open_file, close_file, &files},
+        .memory = memory,
+        .size = sizeof memory,
+        .scratch = SCRATCH,
+        .sink = {write_output, &output},
+        .cache_sink = {write_output, &cache},
+        .cache_capacity = sizeof cache.bytes,
+    };
+    CHECK_EQUAL(SCAN_OK, library_scan(&scan_job, &sstats));
+    CHECK(sstats.tracks >= 4);
+
+    CoverStats cstats;
+    CoverJob cover_job = {
+        .files = {open_dir, next_entry, close_dir, open_file, close_file, &files},
+        .library = {output_read, &output},
+        .library_size = output.length,
+        .sink = {write_output, &covers},
+        .capacity = sizeof covers.bytes,
+        .memory = memory,
+        .size = sizeof memory,
+        .progress = {NULL, NULL},
+        .cache = {output_read, &cache},
+        .cache_size = cache.length,
+    };
+    CHECK_EQUAL(SCAN_OK, cover_build(&cover_job, &cstats));
+    CHECK(cstats.covers >= 1);
+
+    TrackCacheReader reader;
+    TrackCacheIndexEntry idx[32];
+    CHECK(track_cache_open(&reader, (ByteSource){output_read, &cache}, cache.length, idx, 32));
+    CachedPicture pic;
+    CHECK(track_cache_find_picture(&reader, "cover.opus", &pic));
+    CHECK_EQUAL(TAG_PICTURE_BASE64_FLAC_BLOCK, pic.kind);
+    CHECK(pic.front);
+    CHECK(pic.length > 0);
+}
+
+static void interrupted_cache_recovers_on_subsequent_full_scan(void)
+{
+    static Output bad_cache;
+    static Output output;
+    static Output good_cache;
+    bad_cache.length = 12;
+    memset(bad_cache.bytes, 0xAA, bad_cache.length);
+    good_cache.length = 0;
+
+    start_tree();
+    tree_add("/Artist A/Album 1/01 - Song.mp3");
+
+    ScanStats sstats;
+    CHECK_EQUAL(SCAN_OK, scan_tree_cached(16 * 1024, &output, &sstats,
+                                          (ByteSource){output_read, &bad_cache}, bad_cache.length,
+                                          (ByteSink){write_output, &good_cache}, sizeof good_cache.bytes));
+    CHECK_EQUAL(1u, sstats.tracks);
+    CHECK(good_cache.length > 0);
+
+    TrackCacheReader reader;
+    TrackCacheIndexEntry idx[16];
+    CHECK(track_cache_open(&reader, (ByteSource){output_read, &good_cache}, good_cache.length, idx, 16));
+    CHECK_EQUAL(1u, reader.count);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -688,6 +954,11 @@ int main(void)
         TEST_CASE(track_cache_drops_deleted_files),
         TEST_CASE(track_cache_interrupted_write_is_invalid),
         TEST_CASE(cover_build_skips_when_covers_unchanged),
+        TEST_CASE(adding_an_album_reuses_existing_covers),
+        TEST_CASE(adding_a_track_to_an_existing_album_shares_cover),
+        TEST_CASE(multiple_tracks_in_same_album_share_single_cover_record),
+        TEST_CASE(opus_embedded_cover_is_extracted_and_cached),
+        TEST_CASE(interrupted_cache_recovers_on_subsequent_full_scan),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

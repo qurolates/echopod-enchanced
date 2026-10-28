@@ -13,7 +13,7 @@ enum {
     TRACK_CACHE_HEADER_SIZE = 32,
     TRACK_CACHE_RECORD_HEADER = 40,
     TRACK_CACHE_INDEX_ENTRY_SIZE = 8,
-    TRACK_CACHE_MAX_ENTRIES = 2048,
+    TRACK_CACHE_MAX_ENTRIES = 8192,
     TRACK_FLAG_CACHE_HIT = 1
 };
 
@@ -82,6 +82,9 @@ bool track_cache_find_picture(const TrackCacheReader *reader, const char *path,
                               CachedPicture *picture);
 
 bool track_cache_find_flags(const TrackCacheReader *reader, const char *path, uint8_t *flags);
+
+bool track_cache_find_picture_and_flags(const TrackCacheReader *reader, const char *path,
+                                        CachedPicture *picture, uint8_t *flags);
 
 void track_cache_writer_init(TrackCacheWriter *writer, ByteSink sink, uint32_t capacity,
                              TrackCacheIndexEntry *index_memory, uint32_t index_capacity);

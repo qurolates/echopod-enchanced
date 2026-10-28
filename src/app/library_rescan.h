@@ -20,6 +20,7 @@ typedef struct RescanProgress {
 extern const char LIBRARY_SCRATCH_PATH[];
 extern const char CACHE_STORE_PATH[];
 extern const char CACHE_TMP_PATH[];
+extern const char LIBRARY_TMP_PATH[];
 
 RescanOutcome library_rescan_run(RescanProgress progress);
 const char *library_rescan_message(RescanOutcome outcome, char *text, uint32_t capacity);
