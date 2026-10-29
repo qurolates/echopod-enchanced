@@ -76,6 +76,45 @@ static void pet_renders_in_simulator(void)
     screen->draw(screen->context, &canvas);
 }
 
+static void simulator_renders_all_four_stages(void)
+{
+    Screen *screen = open_pet(NULL);
+    Canvas canvas = canvas_make(screen_pixels, (Rect){0, 0, BUFFER_WIDTH, BUFFER_HEIGHT});
+    Pet *pet = pet_screen_pet(&pet_screen);
+
+    PetStage stages[] = {PET_STAGE_EGG, PET_STAGE_BABY, PET_STAGE_CHILD, PET_STAGE_ADULT};
+    PetState states[] = {PET_STATE_IDLE, PET_STATE_LISTENING, PET_STATE_SLEEPING,
+                         PET_STATE_REACTION};
+
+    for (size_t stage_i = 0; stage_i < sizeof stages / sizeof stages[0]; stage_i++) {
+        pet->model.stage = stages[stage_i];
+        for (size_t state_i = 0; state_i < sizeof states / sizeof states[0]; state_i++) {
+            pet->state = states[state_i];
+            memset(screen_pixels, 0, sizeof screen_pixels);
+            screen->draw(screen->context, &canvas);
+
+            int colored = 0;
+            for (int i = 0; i < BUFFER_WIDTH * BUFFER_HEIGHT; i++) {
+                if (screen_pixels[i] != 0) {
+                    colored++;
+                }
+            }
+            CHECK(colored > 200);
+        }
+    }
+}
+
+static void new_pet_starts_as_egg(void)
+{
+    Pet pet;
+    pet_init(&pet);
+    CHECK_EQUAL(PET_STAGE_EGG, pet.model.stage);
+    CHECK_EQUAL(0, pet.model.listening_time_ms);
+    CHECK_EQUAL(0, pet.model.affection);
+    CHECK_EQUAL(0, pet.model.interaction_count);
+    CHECK(strcmp("EGG", pet_stage_name(pet.model.stage)) == 0);
+}
+
 static void playback_start_transitions_to_listening(void)
 {
     Pet pet;
@@ -223,6 +262,315 @@ static void screen_exit_and_sleeping_no_background_tasks(void)
     CHECK_EQUAL(PET_STATE_IDLE, pet_state(pet));
 }
 
+static void experience_accumulates_during_playback(void)
+{
+    Pet pet;
+    pet_init(&pet);
+
+    PlayerStatus playing1 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1000,
+    };
+    pet_update(&pet, playing1, 1000);
+    CHECK_EQUAL(0, pet.model.listening_time_ms);
+
+    PlayerStatus playing2 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1200,
+    };
+    pet_update(&pet, playing2, 1200);
+    CHECK_EQUAL(200, pet.model.listening_time_ms);
+}
+
+static void experience_does_not_accumulate_while_paused_or_stopped(void)
+{
+    Pet pet;
+    pet_init(&pet);
+
+    PlayerStatus playing = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1000,
+    };
+    pet_update(&pet, playing, 1000);
+
+    PlayerStatus playing2 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1500,
+    };
+    pet_update(&pet, playing2, 1500);
+    CHECK_EQUAL(500, pet.model.listening_time_ms);
+
+    PlayerStatus paused = {
+        .state = PLAYER_PAUSED,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1500,
+    };
+    pet_update(&pet, paused, 2000);
+    pet_update(&pet, paused, 3000);
+    CHECK_EQUAL(500, pet.model.listening_time_ms);
+
+    PlayerStatus stopped = {
+        .state = PLAYER_IDLE,
+        .has_track = false,
+        .track = 0,
+        .position_ms = 0,
+    };
+    pet_update(&pet, stopped, 4000);
+    pet_update(&pet, stopped, 5000);
+    CHECK_EQUAL(500, pet.model.listening_time_ms);
+}
+
+static void seeking_does_not_generate_extra_experience(void)
+{
+    Pet pet;
+    pet_init(&pet);
+
+    PlayerStatus playing1 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1000,
+    };
+    pet_update(&pet, playing1, 1000);
+
+    PlayerStatus jump_forward = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 35000,
+    };
+    pet_update(&pet, jump_forward, 1050);
+    CHECK_EQUAL(50, pet.model.listening_time_ms);
+
+    PlayerStatus jump_backward = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 2000,
+    };
+    pet_update(&pet, jump_backward, 1100);
+    CHECK_EQUAL(50, pet.model.listening_time_ms);
+}
+
+static void track_change_preserves_accumulated_progress(void)
+{
+    Pet pet;
+    pet_init(&pet);
+
+    PlayerStatus t1 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1000,
+    };
+    pet_update(&pet, t1, 1000);
+
+    PlayerStatus t1_adv = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 1300,
+    };
+    pet_update(&pet, t1_adv, 1300);
+    CHECK_EQUAL(300, pet.model.listening_time_ms);
+
+    PlayerStatus t2 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 2,
+        .position_ms = 0,
+    };
+    pet_update(&pet, t2, 1350);
+
+    PlayerStatus t2_adv = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 2,
+        .position_ms = 200,
+    };
+    pet_update(&pet, t2_adv, 1550);
+    CHECK_EQUAL(550, pet.model.listening_time_ms);
+}
+
+static void progress_accumulates_when_screen_is_closed(void)
+{
+    Pet pet;
+    pet_init(&pet);
+    pet.screen_active = false;
+
+    PlayerStatus p1 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 0,
+    };
+    pet_update(&pet, p1, 1000);
+
+    PlayerStatus p2 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 600,
+    };
+    pet_update(&pet, p2, 1600);
+    CHECK_EQUAL(600, pet.model.listening_time_ms);
+    CHECK_EQUAL(PET_STATE_SLEEPING, pet_state(&pet));
+
+    pet_set_screen_active(&pet, true, p2, 1600);
+    CHECK_EQUAL(PET_STATE_LISTENING, pet_state(&pet));
+    CHECK_EQUAL(600, pet.model.listening_time_ms);
+}
+
+static void stage_transitions_at_each_threshold(void)
+{
+    Pet pet;
+    pet_init(&pet);
+    CHECK_EQUAL(PET_STAGE_EGG, pet.model.stage);
+
+    pet.model.listening_time_ms = PET_STAGE_BABY_THRESHOLD_MS - 50;
+    PlayerStatus p1 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 100,
+    };
+    pet_update(&pet, p1, 1000);
+
+    PlayerStatus p2 = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 200,
+    };
+    pet_update(&pet, p2, 1100);
+    CHECK_EQUAL(PET_STAGE_BABY, pet.model.stage);
+
+    pet.model.listening_time_ms = PET_STAGE_CHILD_THRESHOLD_MS - 50;
+    pet.was_playing = false;
+    pet_update(&pet, p1, 2000);
+    pet_update(&pet, p2, 2100);
+    CHECK_EQUAL(PET_STAGE_CHILD, pet.model.stage);
+
+    pet.model.listening_time_ms = PET_STAGE_ADULT_THRESHOLD_MS - 50;
+    pet.was_playing = false;
+    pet_update(&pet, p1, 3000);
+    pet_update(&pet, p2, 3100);
+    CHECK_EQUAL(PET_STAGE_ADULT, pet.model.stage);
+}
+
+static void large_progress_restores_correct_stage(void)
+{
+    Pet pet;
+    pet_init(&pet);
+    pet.model.listening_time_ms = 50000000u;
+    pet.model.stage = PET_STAGE_EGG;
+
+    PetStage appropriate = pet_stage_for_time(pet.model.listening_time_ms);
+    CHECK_EQUAL(PET_STAGE_ADULT, appropriate);
+
+    pet_save(&pet);
+    Pet restored;
+    pet_init(&restored);
+    CHECK(pet_load(&restored));
+    CHECK_EQUAL(PET_STAGE_ADULT, restored.model.stage);
+    CHECK_EQUAL(50000000u, restored.model.listening_time_ms);
+}
+
+static void save_and_load_roundtrip(void)
+{
+    fake_hal_reset();
+    Pet pet;
+    pet_init(&pet);
+    pet.model.stage = PET_STAGE_CHILD;
+    pet.model.listening_time_ms = 12345678u;
+    pet.model.affection = 75;
+    pet.model.interaction_count = 89;
+
+    CHECK(pet_save(&pet));
+
+    Pet loaded;
+    pet_init(&loaded);
+    CHECK(pet_load(&loaded));
+
+    CHECK_EQUAL(PET_STAGE_CHILD, loaded.model.stage);
+    CHECK_EQUAL(12345678u, loaded.model.listening_time_ms);
+    CHECK_EQUAL(75, loaded.model.affection);
+    CHECK_EQUAL(89, loaded.model.interaction_count);
+}
+
+static void corrupted_or_missing_save_handled_safely(void)
+{
+    fake_hal_reset();
+    Pet pet;
+    pet_init(&pet);
+    CHECK(!pet_load(&pet));
+    CHECK_EQUAL(PET_STAGE_EGG, pet.model.stage);
+    CHECK_EQUAL(0, pet.model.listening_time_ms);
+
+    uint8_t garbage[PET_STATE_SIZE] = {0xDE, 0xAD, 0xBE, 0xEF};
+    hal_file_write(PET_STORE_PATH, garbage, sizeof garbage);
+
+    CHECK(!pet_load(&pet));
+    CHECK_EQUAL(PET_STAGE_EGG, pet.model.stage);
+    CHECK_EQUAL(0, pet.model.listening_time_ms);
+}
+
+static void restarting_does_not_duplicate_experience(void)
+{
+    fake_hal_reset();
+    Pet pet;
+    pet_init(&pet);
+    pet.model.listening_time_ms = 10000;
+    pet_save(&pet);
+
+    Pet restarted;
+    pet_init(&restarted);
+    pet_load(&restarted);
+    CHECK_EQUAL(10000, restarted.model.listening_time_ms);
+    CHECK(!restarted.was_playing);
+
+    PlayerStatus playing = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 5000,
+    };
+    pet_update(&restarted, playing, 5000);
+    CHECK_EQUAL(10000, restarted.model.listening_time_ms);
+}
+
+static void progress_percent_and_formatting(void)
+{
+    PetModel egg_start = {.stage = PET_STAGE_EGG, .listening_time_ms = 0};
+    CHECK_EQUAL(0, pet_stage_progress_percent(&egg_start));
+
+    PetModel egg_half = {.stage = PET_STAGE_EGG,
+                         .listening_time_ms = PET_STAGE_BABY_THRESHOLD_MS / 2};
+    CHECK_EQUAL(50, pet_stage_progress_percent(&egg_half));
+
+    PetModel adult = {.stage = PET_STAGE_ADULT, .listening_time_ms = 99999999u};
+    CHECK_EQUAL(100, pet_stage_progress_percent(&adult));
+
+    char text[32];
+    pet_format_duration(45000, text, sizeof text);
+    CHECK(strcmp("45s", text) == 0);
+
+    pet_format_duration(150000, text, sizeof text);
+    CHECK(strcmp("2m 30s", text) == 0);
+
+    pet_format_duration(3665000, text, sizeof text);
+    CHECK(strcmp("1h 1m", text) == 0);
+}
+
 static void model_encode_decode_roundtrip(void)
 {
     PetModel original = {
@@ -277,6 +625,8 @@ int main(void)
     static const TestCase cases[] = {
         TEST_CASE(screen_opens_and_exits_cleanly),
         TEST_CASE(pet_renders_in_simulator),
+        TEST_CASE(simulator_renders_all_four_stages),
+        TEST_CASE(new_pet_starts_as_egg),
         TEST_CASE(playback_start_transitions_to_listening),
         TEST_CASE(pause_and_stop_handled_correctly),
         TEST_CASE(track_change_does_not_break_state),
@@ -284,6 +634,17 @@ int main(void)
         TEST_CASE(temporary_reaction_triggers_and_expires),
         TEST_CASE(reentering_screen_does_not_duplicate_state),
         TEST_CASE(screen_exit_and_sleeping_no_background_tasks),
+        TEST_CASE(experience_accumulates_during_playback),
+        TEST_CASE(experience_does_not_accumulate_while_paused_or_stopped),
+        TEST_CASE(seeking_does_not_generate_extra_experience),
+        TEST_CASE(track_change_preserves_accumulated_progress),
+        TEST_CASE(progress_accumulates_when_screen_is_closed),
+        TEST_CASE(stage_transitions_at_each_threshold),
+        TEST_CASE(large_progress_restores_correct_stage),
+        TEST_CASE(save_and_load_roundtrip),
+        TEST_CASE(corrupted_or_missing_save_handled_safely),
+        TEST_CASE(restarting_does_not_duplicate_experience),
+        TEST_CASE(progress_percent_and_formatting),
         TEST_CASE(model_encode_decode_roundtrip),
         TEST_CASE(audio_critical_path_isolated),
     };
