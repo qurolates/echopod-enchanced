@@ -12,6 +12,7 @@ typedef struct PetScreen {
     const Theme *theme;
     const Player *player;
     Pet pet;
+    uint32_t now_ms;
 } PetScreen;
 
 Screen *pet_screen_init(PetScreen *screen, const Theme *theme, const Player *player);
