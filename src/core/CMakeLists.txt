@@ -8,6 +8,7 @@ add_library(echo_core STATIC
     low_battery.c
     permutation.c
     power_policy.c
+    power_save.c
     random.c
     replay_gain.c
     string_builder.c

@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "core/power_policy.h"
+#include "core/power_save.h"
 #include "player.h"
 #include "screens/equalizer_screen.h"
 #include "settings_store.h"
@@ -12,7 +13,7 @@
 #include "ui/toast.h"
 
 enum {
-    SETTINGS_CHOICE_COUNT = 10,
+    SETTINGS_CHOICE_COUNT = 12,
     SETTINGS_ITEM_COUNT = SETTINGS_CHOICE_COUNT + 2
 };
 
@@ -20,6 +21,7 @@ typedef struct SettingsContext {
     SettingsStore *store;
     Player *player;
     PowerPolicy *power;
+    PowerSaveManager *power_save;
     Toast *toast;
     bool *rescan_requested;
     int sleep_option;

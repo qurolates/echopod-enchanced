@@ -4,6 +4,7 @@
 
 #include "browse_screen.h"
 #include "core/power_policy.h"
+#include "core/power_save.h"
 #include "cover_cache.h"
 #include "diagnostics_values.h"
 #include "favorites_store.h"
@@ -129,6 +130,7 @@ typedef struct AppScreensContext {
     SettingsStore *settings;
     FavoritesStore *favorites;
     PowerPolicy *power;
+    PowerSaveManager *power_save;
     Toast *toast;
     CoverCache *covers;
     bool *rescan_requested;

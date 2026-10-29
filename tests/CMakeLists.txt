@@ -25,6 +25,7 @@ echo_add_unit_test(NAME test_random SOURCES core/test_random.c LIBRARIES echo_co
 echo_add_unit_test(NAME test_permutation SOURCES core/test_permutation.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_hash SOURCES core/test_hash.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_power_policy SOURCES core/test_power_policy.c LIBRARIES echo_core)
+echo_add_unit_test(NAME test_power_save SOURCES core/test_power_save.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_low_battery SOURCES core/test_low_battery.c LIBRARIES echo_core)
 echo_add_unit_test(NAME test_color SOURCES gfx/test_color.c LIBRARIES echo_gfx)
 echo_add_unit_test(NAME test_rect SOURCES gfx/test_rect.c LIBRARIES echo_gfx)
@@ -113,6 +114,11 @@ endforeach()
 
 echo_add_unit_test(NAME test_app
     SOURCES app/test_app.c app/fake_hal.c
+    LIBRARIES echo_app echo_library_fixtures
+    PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
+)
+echo_add_unit_test(NAME test_power_saving
+    SOURCES app/test_power_saving.c app/fake_hal.c
     LIBRARIES echo_app echo_library_fixtures
     PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
 )

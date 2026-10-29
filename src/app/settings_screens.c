@@ -24,6 +24,10 @@ static const char *const BRIGHTNESS_OPTIONS[BRIGHTNESS_LEVEL_COUNT] = {"1", "2",
 static const char *const GAIN_OPTIONS[GAIN_LEVEL_COUNT] = {"Low", "High"};
 static const char *const OUTPUT_OPTIONS[OUTPUT_JACK_COUNT] = {"Auto", "3.5 mm", "4.4 mm"};
 static const char *const REPLAY_GAIN_OPTIONS[REPLAY_GAIN_MODE_COUNT] = {"Off", "Track", "Album"};
+static const char *const POWER_SAVE_OPTIONS[POWER_SAVE_MODE_COUNT] = {"Off", "Balanced",
+                                                                      "Maximum"};
+static const char *const AUTO_POWER_SAVE_OPTIONS[AUTO_POWER_SAVE_MODE_COUNT] = {"Off", "10%",
+                                                                                "20%"};
 static const char *const START_OPTIONS[START_SCREEN_COUNT] = {
     "Main menu", "Now Playing", "Albums", "Artists", "Favorites", "Playlists", "Cover Flow"};
 
@@ -108,7 +112,15 @@ static void choose_timeout(void *context, int index)
 {
     SettingsContext *settings = context;
     editable_settings(context)->screen_timeout = (uint8_t)index;
-    power_policy_set_timeout(settings->power, settings_screen_timeout_ms(settings_of(context)));
+    if (settings->power_save != NULL) {
+        power_save_set_user_timeout(settings->power_save,
+                                    settings_screen_timeout_ms(settings_of(context)));
+        power_policy_set_timeout(settings->power,
+                                 power_save_effective_timeout(settings->power_save));
+    } else {
+        power_policy_set_timeout(settings->power,
+                                 settings_screen_timeout_ms(settings_of(context)));
+    }
     save(settings);
 }
 
@@ -181,6 +193,38 @@ static void choose_start(void *context, int index)
     save(context);
 }
 
+static int current_power_save(const void *context)
+{
+    return (int)settings_of(context)->power_save_mode;
+}
+
+static void choose_power_save(void *context, int index)
+{
+    SettingsContext *settings = context;
+    editable_settings(context)->power_save_mode = (PowerSaveMode)index;
+    if (settings->power_save != NULL) {
+        power_save_set_mode(settings->power_save, (PowerSaveMode)index);
+        power_policy_set_timeout(settings->power,
+                                 power_save_effective_timeout(settings->power_save));
+    }
+    save(settings);
+}
+
+static int current_auto_power_save(const void *context)
+{
+    return (int)settings_of(context)->auto_power_save;
+}
+
+static void choose_auto_power_save(void *context, int index)
+{
+    SettingsContext *settings = context;
+    editable_settings(context)->auto_power_save = (AutoPowerSaveMode)index;
+    if (settings->power_save != NULL) {
+        power_save_set_auto_mode(settings->power_save, (AutoPowerSaveMode)index);
+    }
+    save(settings);
+}
+
 static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
     {"Shuffle", SHUFFLE_OPTIONS, SHUFFLE_MODE_COUNT, current_shuffle, choose_shuffle},
     {"Repeat", REPEAT_OPTIONS, REPEAT_MODE_COUNT, current_repeat, choose_repeat},
@@ -195,6 +239,10 @@ static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
     {"Start screen", START_OPTIONS, START_SCREEN_COUNT, current_start, choose_start},
     {"ReplayGain", REPLAY_GAIN_OPTIONS, REPLAY_GAIN_MODE_COUNT, current_replay_gain,
      choose_replay_gain},
+    {"Power saving", POWER_SAVE_OPTIONS, POWER_SAVE_MODE_COUNT, current_power_save,
+     choose_power_save},
+    {"Auto power save", AUTO_POWER_SAVE_OPTIONS, AUTO_POWER_SAVE_MODE_COUNT,
+     current_auto_power_save, choose_auto_power_save},
 };
 
 static ScreenAction open_choice(void *context)
@@ -252,22 +300,30 @@ Screen *settings_screens_init(SettingsScreens *screens, SettingsContext context,
 {
     screens->context = context;
     screens->theme = theme;
-    screens->items[SETTINGS_CHOICE_COUNT] = (MenuItem){
+    screens->items[10] = (MenuItem){
         .label = "Rescan library", .select = request_rescan, .context = &screens->context};
-    screens->items[SETTINGS_CHOICE_COUNT + 1] = (MenuItem){
+    screens->items[11] = (MenuItem){
         .label = "Equalizer",
         .select = open_equalizer,
         .context = screens,
         .value = equalizer_value,
         .opens = true,
     };
-    for (int index = 0; index < SETTINGS_CHOICE_COUNT; index++) {
+    for (int index = 0; index < 10; index++) {
         screens->entries[index] = (SettingsEntry){.choice = &CHOICES[index], .owner = screens};
         screens->items[index] = (MenuItem){.label = CHOICES[index].title,
                                            .select = open_choice,
                                            .context = &screens->entries[index],
                                            .value = choice_value,
                                            .opens = true};
+    }
+    for (int index = 10; index < SETTINGS_CHOICE_COUNT; index++) {
+        screens->entries[index] = (SettingsEntry){.choice = &CHOICES[index], .owner = screens};
+        screens->items[index + 2] = (MenuItem){.label = CHOICES[index].title,
+                                               .select = open_choice,
+                                               .context = &screens->entries[index],
+                                               .value = choice_value,
+                                               .opens = true};
     }
     MenuConfig menu = {.title = "Settings",
                        .items = screens->items,

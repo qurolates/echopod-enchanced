@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "core/eq.h"
+#include "core/power_save.h"
 #include "core/replay_gain.h"
 #include "playback/play_queue.h"
 
@@ -67,6 +68,8 @@ typedef struct Settings {
     uint8_t eq_user_preset_count;
     EqUserPreset eq_user_presets[EQ_USER_PRESET_CAPACITY];
     ReplayGainMode replay_gain_mode;
+    PowerSaveMode power_save_mode;
+    AutoPowerSaveMode auto_power_save;
 } Settings;
 
 Settings settings_defaults(void);

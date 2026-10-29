@@ -5,7 +5,8 @@
 #include "core/hash.h"
 
 enum {
-    VERSION = 5,
+    VERSION = 6,
+    FIFTH_VERSION = 5,
     FOURTH_VERSION = 4,
     THIRD_VERSION = 3,
     SECOND_VERSION = 2,
@@ -26,6 +27,8 @@ enum {
     EQ_GAINS_FIELD = 17,
     EQ_USER_COUNT_FIELD = 22,
     REPLAY_GAIN_FIELD = 23,
+    POWER_SAVE_MODE_FIELD = 216,
+    AUTO_POWER_SAVE_FIELD = 217,
     USER_PRESETS_BASE = 24,
     USER_PRESET_RECORD_SIZE = 24,
     LEGACY_CHECKSUM_FIELD = 20,
@@ -64,6 +67,8 @@ Settings settings_defaults(void)
         .eq_gains = {0, 0, 0, 0, 0},
         .eq_user_preset_count = 0,
         .replay_gain_mode = REPLAY_GAIN_OFF,
+        .power_save_mode = POWER_SAVE_OFF,
+        .auto_power_save = AUTO_POWER_SAVE_OFF,
     };
 }
 
@@ -249,6 +254,8 @@ void settings_encode(const Settings *settings, uint8_t *bytes)
     }
     bytes[EQ_USER_COUNT_FIELD] = settings->eq_user_preset_count;
     bytes[REPLAY_GAIN_FIELD] = (uint8_t)settings->replay_gain_mode;
+    bytes[POWER_SAVE_MODE_FIELD] = (uint8_t)settings->power_save_mode;
+    bytes[AUTO_POWER_SAVE_FIELD] = (uint8_t)settings->auto_power_save;
     for (int index = 0; index < settings->eq_user_preset_count; index++) {
         int offset = USER_PRESETS_BASE + index * USER_PRESET_RECORD_SIZE;
         const EqUserPreset *preset = &settings->eq_user_presets[index];
@@ -274,7 +281,8 @@ static bool header_valid(const uint8_t *bytes, uint32_t length)
     if (bytes[VERSION_FIELD + 1] != 0) {
         return false;
     }
-    if ((version == VERSION || version == FOURTH_VERSION) && length >= SETTINGS_FILE_SIZE) {
+    if ((version == VERSION || version == FIFTH_VERSION || version == FOURTH_VERSION) &&
+        length >= SETTINGS_FILE_SIZE) {
         return get_u32(bytes, CHECKSUM_FIELD) == checksum_of(bytes, CHECKSUM_FIELD);
     }
     if (version == THIRD_VERSION && length >= V3_FILE_SIZE) {
@@ -323,9 +331,16 @@ static bool values_valid(const uint8_t *bytes)
             }
         }
     }
-    if (version == VERSION || version == FOURTH_VERSION) {
-        if (version == VERSION && bytes[REPLAY_GAIN_FIELD] >= REPLAY_GAIN_MODE_COUNT) {
+    if (version == VERSION || version == FIFTH_VERSION || version == FOURTH_VERSION) {
+        if ((version == VERSION || version == FIFTH_VERSION) &&
+            bytes[REPLAY_GAIN_FIELD] >= REPLAY_GAIN_MODE_COUNT) {
             return false;
+        }
+        if (version == VERSION) {
+            if (bytes[POWER_SAVE_MODE_FIELD] >= POWER_SAVE_MODE_COUNT ||
+                bytes[AUTO_POWER_SAVE_FIELD] >= AUTO_POWER_SAVE_MODE_COUNT) {
+                return false;
+            }
         }
         for (int band = 0; band < EQ_BAND_COUNT; band++) {
             int8_t gain = (int8_t)bytes[EQ_GAINS_FIELD + band];
@@ -383,13 +398,19 @@ bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
         .volume = bytes[VOLUME_FIELD],
         .auto_off = version == FIRST_VERSION ? (uint8_t)DEFAULT_AUTO_OFF_OPTION
                                              : bytes[AUTO_OFF_FIELD],
-        .eq_enabled = (version == VERSION || version == FOURTH_VERSION || version == THIRD_VERSION)
+        .eq_enabled = (version == VERSION || version == FIFTH_VERSION ||
+                       version == FOURTH_VERSION || version == THIRD_VERSION)
                           ? (bytes[EQ_ENABLED_FIELD] != 0)
                           : false,
         .eq_preset = 0,
         .eq_user_preset_count = 0,
-        .replay_gain_mode = version == VERSION ? (ReplayGainMode)bytes[REPLAY_GAIN_FIELD]
-                                               : REPLAY_GAIN_OFF,
+        .replay_gain_mode = (version == VERSION || version == FIFTH_VERSION)
+                                ? (ReplayGainMode)bytes[REPLAY_GAIN_FIELD]
+                                : REPLAY_GAIN_OFF,
+        .power_save_mode = version == VERSION ? (PowerSaveMode)bytes[POWER_SAVE_MODE_FIELD]
+                                              : POWER_SAVE_OFF,
+        .auto_power_save = version == VERSION ? (AutoPowerSaveMode)bytes[AUTO_POWER_SAVE_FIELD]
+                                              : AUTO_POWER_SAVE_OFF,
     };
     if (version == THIRD_VERSION) {
         uint8_t preset = bytes[EQ_PRESET_FIELD];
@@ -397,7 +418,7 @@ bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
         for (int band = 0; band < EQ_BAND_COUNT; band++) {
             result.eq_gains[band] = (int8_t)bytes[EQ_GAINS_FIELD + band];
         }
-    } else if (version == VERSION || version == FOURTH_VERSION) {
+    } else if (version == VERSION || version == FIFTH_VERSION || version == FOURTH_VERSION) {
         result.eq_preset = bytes[EQ_PRESET_FIELD];
         for (int band = 0; band < EQ_BAND_COUNT; band++) {
             result.eq_gains[band] = (int8_t)bytes[EQ_GAINS_FIELD + band];

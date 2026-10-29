@@ -193,6 +193,7 @@ void player_init(Player *player, const Library *library)
     player->token_counter = 0;
     player->current_token = 0;
     player->last_save_ms = 0;
+    player->save_interval_ms = PLAYER_SAVE_INTERVAL_MS;
     player->jack = hal_audio_jack();
     player->refusal_count = 0;
     player->refusal = (HalAudioRefusal){.problem = HAL_AUDIO_PROBLEM_NONE};
@@ -398,10 +399,15 @@ bool player_jump_to_queue(Player *player, PlayQueueCursor cursor)
 static void save_periodically(Player *player, uint32_t now_ms)
 {
     if (player->state == PLAYER_PLAYING &&
-        now_ms - player->last_save_ms >= PLAYER_SAVE_INTERVAL_MS) {
+        now_ms - player->last_save_ms >= player->save_interval_ms) {
         player_save(player);
         player->last_save_ms = now_ms;
     }
+}
+
+void player_set_save_interval(Player *player, uint32_t interval_ms)
+{
+    player->save_interval_ms = interval_ms;
 }
 
 static void follow_jack(Player *player)
