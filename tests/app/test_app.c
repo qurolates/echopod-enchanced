@@ -498,7 +498,7 @@ static void the_home_menu_hides_now_playing_with_nothing_loaded(void)
     start_app_with_library();
     move_down(HOME_NOW_PLAYING_INDEX);
     tap(KEY_PLAY);
-    CHECK(title_is("Music"));
+    CHECK(title_is("EchoPet"));
 }
 
 static void open_setting(int index)
@@ -1759,6 +1759,17 @@ static void menu_does_nothing_while_nothing_plays(void)
     CHECK(title_is("EchoPod"));
 }
 
+static void echopet_opens_from_home_menu_and_returns_home(void)
+{
+    start_app();
+    move_down(HOME_NOW_PLAYING_INDEX);
+    tap(KEY_PLAY);
+    CHECK(title_is("EchoPet"));
+    tap(KEY_PLAY);
+    tap(KEY_BACK);
+    CHECK(title_is("EchoPod"));
+}
+
 static void echopet_opens_from_diagnostics_and_returns_home(void)
 {
     start_app();
@@ -1907,6 +1918,7 @@ int main(void)
         TEST_CASE(stopping_the_app_saves_the_session),
         TEST_CASE(each_step_records_its_duration),
         TEST_CASE(echopet_opens_from_diagnostics_and_returns_home),
+        TEST_CASE(echopet_opens_from_home_menu_and_returns_home),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

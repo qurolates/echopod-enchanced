@@ -27,7 +27,7 @@
 #include "ui/toast.h"
 
 enum {
-    HOME_ITEM_COUNT = 4,
+    HOME_ITEM_COUNT = 5,
     MUSIC_ITEM_COUNT = 9,
     DIAGNOSTICS_ITEM_COUNT = 41,
     START_PATH_CAPACITY = 2
