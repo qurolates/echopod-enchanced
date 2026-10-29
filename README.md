@@ -2,7 +2,7 @@
 
 **EchoPod Enhanced** is a feature-extended fork of [EchoPod](https://github.com/BasilSkyWalk/echopod), the replacement firmware for the Snowsky (FiiO) Echo Mini portable music player (dual Cortex-M3 Rockchip RKnanoC).
 
-This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a **5-band equalizer with user presets**, **ReplayGain with anti-clipping**, a comprehensive **Power Saving Mode** with automatic low-battery hysteresis, full **Cyrillic and expanded CJK Unicode font coverage**, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
+This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a **5-band equalizer with user presets**, **ReplayGain with anti-clipping**, a comprehensive **Power Saving Mode**, the **EchoPet** virtual pet companion, accelerated **incremental library scanning** with native on-device Opus artwork extraction, modern **IBM Plex Sans typography** with full Cyrillic and expanded CJK Unicode support, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
 
 > [!NOTE]
 > EchoPod Enhanced is community-developed open-source software and is not affiliated with or endorsed by FiiO / Snowsky.
@@ -45,14 +45,37 @@ This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a
 - **Audio Path & Codec Protection:** Retains the 200 MHz CPU operating frequency during audio playback across all codecs (AAC, Opus, FLAC, MP3), ensuring zero audio underruns or buffer starvation, while enabling 96 MHz deep standby when idle with screen dark.
 - **Instant Mode Switching & Restoration:** Seamless on-the-fly mode transitions during active playback without interruption; user's base screen timeout is safely remembered and restored when power saving is turned off.
 
-### 6. Power Button Boot Logic
+### 6. EchoPet Virtual Pet Companion
+- **Tamagotchi-Inspired Gameplay:** A music-driven virtual pet integrated directly into firmware that lives and evolves on your EchoPod.
+- **Listening-Driven Growth:** Evolves through distinct life milestones (Egg $\to$ Baby Kitten $\to$ Curious Cat $\to$ Master Cat) based on your real music listening hours.
+- **Dedicated 60/40 Pixel-Art Screen:** Custom animated 96x96 pixel sprites, responsive animations (idle ear twitches, playful tail wags, sleep states), and progress indicators.
+- **Persistent State:** Automatically saves listening milestones and pet happiness to `/.echo/pet.bin`, surviving reboots with power-aware periodic flush intervals.
+- **Direct Home Menu Entry:** Seamlessly accessed as a first-class screen from the main menu.
+
+### 7. Accelerated Library Scanner & Full Cover Discovery
+- **High-Speed Incremental Cache:** Tracks up to 8,192 audio files with block-based index traversal, drastically slashing cold and warm boot scanning times.
+- **Cover Reuse Engine:** Automatically detects unchanged albums and reuses cached artwork instead of re-decoding from flash, cutting rescan times.
+- **Full Embedded Artwork Extraction:** Native on-device front cover extraction across **all** supported formats: MP3 (ID3v2 APIC), FLAC (Picture block), M4A (MP4 `covr`), and Opus/Ogg (Base64 `METADATA_BLOCK_PICTURE` in Vorbis comments).
+- **Watchdog Protection:** Continuously feeds the hardware stall and watchdog timer during lengthy library builds to guarantee stability.
+
+### 8. Modern IBM Plex Typography & UI Enhancements
+- **IBM Plex Sans Fonts:** High-legibility typography in regular and semi-bold weights optimized specifically for the 2.4" display.
+- **Theme-Adaptive Cover Flow:** Cover Flow dynamically measures cover art luminosity and tints the background palette for optimal visual contrast.
+- **Classic Light Theme:** High-contrast retro aesthetic with crisp dark-on-light text rendering.
+- **Release Profile Streamlining:** Diagnostics menu excluded from release firmware builds for a clean, distraction-free consumer experience.
+
+### 9. Power Button Boot Logic
 - **Hold-to-Boot Detection:** Implements a state-machine debounce and hold check (`BOOT_POWER_HOLD_MS`) on boot. Prevents false power-ons from brief accidental presses in a pocket or bag.
 
-### 7. Multilingual Unicode Typography
+### 10. Multilingual Unicode Typography
 - **Cyrillic & Extended CJK Support:** Complete Cyrillic alphabet (Russian, Belarusian, Ukrainian) and expanded Chinese, Japanese, and Korean glyphs integrated into the compressed bitmap font system.
 - **Case Folding & Sorting:** Fold table updated for proper Unicode case folding, searching, and alphabetical sorting in the music library.
 
-### 8. Memory & Performance Measurements
+### 11. Performance, Battery & Memory Measurements
+- **Zero-Drift Display Pacing:** Main loop display refresh paced at 30 FPS with WFI sleep when lit to reduce processor heat.
+- **Automatic Audio Standby:** Core 1 and hardware DAC automatically power down after 3 seconds of pause/idle, allowing Core 0 to enter 96 MHz deep standby.
+- **Core 1 Busy-Wait Elimination:** Inter-core IPC without busy-spin polling loops.
+- **Unity Gain Fast-Path:** Instant sample pass-through when EQ and ReplayGain are neutral.
 - **Core 0 CODE_RAM:** 146,988 bytes used out of 157,292 limit (**+10.3 KB headroom** in Release build).
 - **Core 1 AAC Overlay:** 50,540 bytes code (**+77 KB headroom**).
 - **Core 1 Opus Overlay:** 73,160 bytes code, 27.7 KB BSS (**+57 KB code headroom**, **+13 KB BSS headroom**).
@@ -161,8 +184,9 @@ mkdir -p build/system
 
 ## Album Art Notes
 
-- **MP3, FLAC, M4A:** Embedded front covers (ID3 APIC, FLAC Picture, MP4 `covr`) are extracted automatically during library rescan on the device.
-- **Opus / Ogg:** Vorbis Comments store embedded covers as Base64-encoded FLAC blocks (`METADATA_BLOCK_PICTURE`). To display covers for Opus albums, place a `cover.jpg`, `folder.jpg`, `front.jpg`, or `albumart.jpg` (or `.png`) in the album folder, or pre-generate the cover cache on your PC using:
+- **Embedded Covers (MP3, FLAC, M4A, Opus):** Front cover art embedded directly inside audio files (ID3v2 APIC, FLAC Picture block, MP4 `covr`, and Opus Vorbis Comment `METADATA_BLOCK_PICTURE`) is natively parsed and indexed directly on the device during library rescanning.
+- **Folder Image Fallback:** For albums without embedded artwork, EchoPod automatically loads `cover.jpg`, `folder.jpg`, `front.jpg`, `albumart.jpg` (or `.png`) from the album directory.
+- **Offline Indexing Tool:** You can also pre-generate the cover cache on your PC for instant loading using:
   ```sh
   python3 tools/cover_export.py --music /path/to/sdcard --library /path/to/sdcard/.echo/library.db --output /path/to/sdcard/.echo/covers.bin
   ```
