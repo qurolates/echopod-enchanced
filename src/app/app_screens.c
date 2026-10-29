@@ -144,15 +144,24 @@ static void build_home(AppScreens *screens, AppScreensContext context)
     const Theme *theme = context.theme;
     screens->home_items[0] = app_screens_open_item("Music", &screens->music.screen);
     screens->home_items[1] = app_screens_open_item("Settings", &screens->settings.menu.screen);
+#if defined(ECHO_RELEASE) && ECHO_RELEASE
+    screens->home_items[2] = app_screens_open_item("Now Playing", &screens->now_playing.screen);
+    screens->home_items[2].shown = player_has_track;
+    screens->home_items[2].shown_context = context.player;
+    screens->home_items[3] = app_screens_open_item("EchoPet", &screens->pet.screen);
+    int home_item_count = 4;
+#else
     screens->home_items[2] = app_screens_open_item("Diagnostics", &screens->diagnostics.screen);
     screens->home_items[3] = app_screens_open_item("Now Playing", &screens->now_playing.screen);
     screens->home_items[3].shown = player_has_track;
     screens->home_items[3].shown_context = context.player;
     screens->home_items[4] = app_screens_open_item("EchoPet", &screens->pet.screen);
+    int home_item_count = HOME_ITEM_COUNT;
+#endif
     home_art_init(&screens->home_art, context.covers, context.store, context.player, theme);
     MenuConfig home = {.title = "EchoPod",
                        .items = screens->home_items,
-                       .item_count = HOME_ITEM_COUNT,
+                       .item_count = home_item_count,
                        .theme = theme,
                        .panel = {.width = HOME_ART_WIDTH,
                                  .update = home_art_update,

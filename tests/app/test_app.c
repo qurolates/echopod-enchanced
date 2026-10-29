@@ -32,14 +32,15 @@ enum {
     BJORK_POSITION = 3,
     HOME_SETTINGS_INDEX = 1,
     HOME_NOW_PLAYING_INDEX = 3,
-    SETTINGS_REPEAT_INDEX = 1,
+    SETTINGS_RESCAN_INDEX = 0,
+    SETTINGS_SHUFFLE_INDEX = 1,
     SETTINGS_SLEEP_INDEX = 2,
-    SETTINGS_TIMEOUT_INDEX = 4,
-    SETTINGS_BRIGHTNESS_INDEX = 5,
-    SETTINGS_GAIN_INDEX = 6,
-    SETTINGS_START_INDEX = 8,
-    SETTINGS_REPLAY_GAIN_INDEX = 9,
-    SETTINGS_RESCAN_INDEX = 10,
+    SETTINGS_REPEAT_INDEX = 3,
+    SETTINGS_GAIN_INDEX = 4,
+    SETTINGS_REPLAY_GAIN_INDEX = 6,
+    SETTINGS_TIMEOUT_INDEX = 11,
+    SETTINGS_BRIGHTNESS_INDEX = 12,
+    SETTINGS_START_INDEX = 13,
     MUSIC_COVER_FLOW_INDEX = 0,
     MUSIC_PLAYLISTS_INDEX = 7,
     COVER_CENTER_X = 160,
@@ -512,13 +513,13 @@ static void open_setting(int index)
 static void settings_choose_shuffle_and_repeat(void)
 {
     start_app_with_library();
-    open_setting(0);
+    open_setting(SETTINGS_SHUFFLE_INDEX);
     CHECK(title_is("Shuffle"));
     move_down(1);
     tap(KEY_PLAY);
     CHECK(title_is("Settings"));
     CHECK_EQUAL(SHUFFLE_SONGS, app_player_status().shuffle);
-    move_down(SETTINGS_REPEAT_INDEX);
+    move_down(SETTINGS_REPEAT_INDEX - SETTINGS_SHUFFLE_INDEX);
     tap(KEY_PLAY);
     CHECK(title_is("Repeat"));
     move_down(2);

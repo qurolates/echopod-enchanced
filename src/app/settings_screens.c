@@ -227,22 +227,22 @@ static void choose_auto_power_save(void *context, int index)
 
 static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
     {"Shuffle", SHUFFLE_OPTIONS, SHUFFLE_MODE_COUNT, current_shuffle, choose_shuffle},
-    {"Repeat", REPEAT_OPTIONS, REPEAT_MODE_COUNT, current_repeat, choose_repeat},
     {"Sleep timer", SLEEP_OPTIONS, SLEEP_TIMER_OPTION_COUNT, current_sleep, choose_sleep},
+    {"Repeat", REPEAT_OPTIONS, REPEAT_MODE_COUNT, current_repeat, choose_repeat},
+    {"Gain", GAIN_OPTIONS, GAIN_LEVEL_COUNT, current_gain, choose_gain},
+    {"ReplayGain", REPLAY_GAIN_OPTIONS, REPLAY_GAIN_MODE_COUNT, current_replay_gain,
+     choose_replay_gain},
+    {"Output", OUTPUT_OPTIONS, OUTPUT_JACK_COUNT, current_output, choose_output},
+    {"Power saving", POWER_SAVE_OPTIONS, POWER_SAVE_MODE_COUNT, current_power_save,
+     choose_power_save},
+    {"Auto power save", AUTO_POWER_SAVE_OPTIONS, AUTO_POWER_SAVE_MODE_COUNT,
+     current_auto_power_save, choose_auto_power_save},
     {"Auto off", AUTO_OFF_OPTIONS, AUTO_OFF_OPTION_COUNT, current_auto_off, choose_auto_off},
     {"Screen timeout", TIMEOUT_OPTIONS, SCREEN_TIMEOUT_OPTION_COUNT, current_timeout,
      choose_timeout},
     {"Brightness", BRIGHTNESS_OPTIONS, BRIGHTNESS_LEVEL_COUNT, current_brightness,
      choose_brightness},
-    {"Gain", GAIN_OPTIONS, GAIN_LEVEL_COUNT, current_gain, choose_gain},
-    {"Output", OUTPUT_OPTIONS, OUTPUT_JACK_COUNT, current_output, choose_output},
     {"Start screen", START_OPTIONS, START_SCREEN_COUNT, current_start, choose_start},
-    {"ReplayGain", REPLAY_GAIN_OPTIONS, REPLAY_GAIN_MODE_COUNT, current_replay_gain,
-     choose_replay_gain},
-    {"Power saving", POWER_SAVE_OPTIONS, POWER_SAVE_MODE_COUNT, current_power_save,
-     choose_power_save},
-    {"Auto power save", AUTO_POWER_SAVE_OPTIONS, AUTO_POWER_SAVE_MODE_COUNT,
-     current_auto_power_save, choose_auto_power_save},
 };
 
 static ScreenAction open_choice(void *context)
@@ -300,24 +300,24 @@ Screen *settings_screens_init(SettingsScreens *screens, SettingsContext context,
 {
     screens->context = context;
     screens->theme = theme;
-    screens->items[10] = (MenuItem){
+    screens->items[0] = (MenuItem){
         .label = "Rescan library", .select = request_rescan, .context = &screens->context};
-    screens->items[11] = (MenuItem){
+    screens->items[5] = (MenuItem){
         .label = "Equalizer",
         .select = open_equalizer,
         .context = screens,
         .value = equalizer_value,
         .opens = true,
     };
-    for (int index = 0; index < 10; index++) {
+    for (int index = 0; index < 4; index++) {
         screens->entries[index] = (SettingsEntry){.choice = &CHOICES[index], .owner = screens};
-        screens->items[index] = (MenuItem){.label = CHOICES[index].title,
-                                           .select = open_choice,
-                                           .context = &screens->entries[index],
-                                           .value = choice_value,
-                                           .opens = true};
+        screens->items[index + 1] = (MenuItem){.label = CHOICES[index].title,
+                                               .select = open_choice,
+                                               .context = &screens->entries[index],
+                                               .value = choice_value,
+                                               .opens = true};
     }
-    for (int index = 10; index < SETTINGS_CHOICE_COUNT; index++) {
+    for (int index = 4; index < SETTINGS_CHOICE_COUNT; index++) {
         screens->entries[index] = (SettingsEntry){.choice = &CHOICES[index], .owner = screens};
         screens->items[index + 2] = (MenuItem){.label = CHOICES[index].title,
                                                .select = open_choice,

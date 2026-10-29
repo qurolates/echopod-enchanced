@@ -36,3 +36,6 @@ target_link_libraries(echo_app
     PUBLIC echo_core echo_gfx echo_ui echo_fonts echo_library echo_playback echo_settings echo_hal
     PRIVATE echo_options
 )
+if(ECHO_RELEASE)
+    target_compile_definitions(echo_app PUBLIC ECHO_RELEASE=1)
+endif()
