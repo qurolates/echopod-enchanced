@@ -65,6 +65,7 @@ enum {
     DIAGNOSTICS_CORE1_DECODE_INDEX = 13,
     DIAGNOSTICS_STALL_TEST_INDEX = 20,
     DIAGNOSTICS_POWER_TAPS_INDEX = 21,
+    DIAGNOSTICS_ECHOPET_INDEX = 40,
     FIFTEEN_MINUTES_MS = 15 * 60 * 1000,
     GOODBYE_MS = 1000,
     SPLASH_FADE_MS = 600,
@@ -497,7 +498,7 @@ static void the_home_menu_hides_now_playing_with_nothing_loaded(void)
     start_app_with_library();
     move_down(HOME_NOW_PLAYING_INDEX);
     tap(KEY_PLAY);
-    CHECK(title_is("Music"));
+    CHECK(title_is("EchoPet"));
 }
 
 static void open_setting(int index)
@@ -1758,6 +1759,53 @@ static void menu_does_nothing_while_nothing_plays(void)
     CHECK(title_is("EchoPod"));
 }
 
+static void echopet_progress_survives_a_restart(void)
+{
+    start_app_with_library();
+    play_first_album_track();
+    for (int i = 1; i <= 35; i++) {
+        now_ms += 1000;
+        fake_hal_audio_set_position((uint32_t)(i * 1000));
+        step();
+    }
+    app_stop();
+    uint32_t saved_time = app_pet()->model.listening_time_ms;
+    CHECK(saved_time > 0);
+
+    restart_app();
+    CHECK_EQUAL(saved_time, app_pet()->model.listening_time_ms);
+
+    step();
+    CHECK_EQUAL(saved_time, app_pet()->model.listening_time_ms);
+}
+
+static void echopet_opens_from_home_menu_and_returns_home(void)
+{
+    start_app();
+    move_down(HOME_NOW_PLAYING_INDEX);
+    tap(KEY_PLAY);
+    CHECK(title_is("EchoPet"));
+    tap(KEY_PLAY);
+    tap(KEY_BACK);
+    CHECK(title_is("EchoPod"));
+}
+
+static void echopet_opens_from_diagnostics_and_returns_home(void)
+{
+    start_app();
+    move_down(HOME_DIAGNOSTICS_INDEX);
+    tap(KEY_PLAY);
+    CHECK(title_is("Diagnostics"));
+    move_down(DIAGNOSTICS_ECHOPET_INDEX);
+    tap(KEY_PLAY);
+    CHECK(title_is("EchoPet"));
+    tap(KEY_PLAY);
+    tap(KEY_BACK);
+    CHECK(title_is("Diagnostics"));
+    tap(KEY_BACK);
+    CHECK(title_is("EchoPod"));
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -1889,6 +1937,9 @@ int main(void)
         TEST_CASE(holding_play_in_cover_flow_toggles_a_favorite),
         TEST_CASE(stopping_the_app_saves_the_session),
         TEST_CASE(each_step_records_its_duration),
+        TEST_CASE(echopet_opens_from_diagnostics_and_returns_home),
+        TEST_CASE(echopet_opens_from_home_menu_and_returns_home),
+        TEST_CASE(echopet_progress_survives_a_restart),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

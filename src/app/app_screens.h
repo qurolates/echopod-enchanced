@@ -15,6 +15,7 @@
 #include "screens/cover_flow_screen.h"
 #include "screens/font_sample_screen.h"
 #include "screens/now_playing_screen.h"
+#include "screens/pet_screen.h"
 #include "screens/stopwatch_screen.h"
 #include "screens/test_pattern_screen.h"
 #include "screens/up_next_screen.h"
@@ -26,9 +27,9 @@
 #include "ui/toast.h"
 
 enum {
-    HOME_ITEM_COUNT = 4,
+    HOME_ITEM_COUNT = 5,
     MUSIC_ITEM_COUNT = 9,
-    DIAGNOSTICS_ITEM_COUNT = 40,
+    DIAGNOSTICS_ITEM_COUNT = 41,
     START_PATH_CAPACITY = 2
 };
 
@@ -103,6 +104,7 @@ typedef struct AppScreens {
     FontSampleScreen font_sample;
     StopwatchScreen stopwatch;
     BluetoothScreen bluetooth;
+    PetScreen pet;
     ClockOption clock;
     ToneOption tone;
     DmaToneOption dma_tone;

@@ -147,6 +147,7 @@ static void build_home(AppScreens *screens, AppScreensContext context)
     screens->home_items[3] = app_screens_open_item("Now Playing", &screens->now_playing.screen);
     screens->home_items[3].shown = player_has_track;
     screens->home_items[3].shown_context = context.player;
+    screens->home_items[4] = app_screens_open_item("EchoPet", &screens->pet.screen);
     home_art_init(&screens->home_art, context.covers, context.store, context.player, theme);
     MenuConfig home = {.title = "EchoPod",
                        .items = screens->home_items,
@@ -173,6 +174,7 @@ Screen *app_screens_init(AppScreens *screens, AppScreensContext context)
                                     .up_next = up_next_screen_init(&screens->up_next, up_next)};
     message_screen_init(&screens->no_library, no_library);
     now_playing_screen_init(&screens->now_playing, now_playing);
+    pet_screen_init(&screens->pet, theme, context.player);
     build_music(screens, context);
     build_settings(screens, context);
     diagnostics_menu_build(screens, context.options, theme);

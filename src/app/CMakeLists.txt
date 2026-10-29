@@ -28,6 +28,8 @@ add_library(echo_app STATIC
     screens/up_next_screen.c
     screens/stopwatch_screen.c
     screens/test_pattern_screen.c
+    pet.c
+    screens/pet_screen.c
 )
 target_include_directories(echo_app PUBLIC include PRIVATE .)
 target_link_libraries(echo_app

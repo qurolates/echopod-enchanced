@@ -21,6 +21,7 @@ static const char SYSTEM_PREFIX[] = "/.echo/";
 typedef struct SimStorage {
     const char *card_directory;
     const char *system_directory;
+    char default_system_directory[PATH_CAPACITY];
     FILE *files[OPEN_FILE_CAPACITY];
     DIR *dirs[OPEN_DIR_CAPACITY];
     char dir_paths[OPEN_DIR_CAPACITY][PATH_CAPACITY];
@@ -32,6 +33,14 @@ void sim_storage_configure(const char *card_directory, const char *system_direct
 {
     storage.card_directory = card_directory;
     storage.system_directory = system_directory;
+    if (storage.system_directory == NULL && card_directory != NULL) {
+        int written = snprintf(storage.default_system_directory,
+                               sizeof storage.default_system_directory, "%s/.echo", card_directory);
+        if (written > 0 && (size_t)written < sizeof storage.default_system_directory) {
+            mkdir(storage.default_system_directory, 0755);
+            storage.system_directory = storage.default_system_directory;
+        }
+    }
 }
 
 bool sim_storage_host_path(const char *path, char *buffer, size_t capacity)
@@ -86,6 +95,7 @@ bool hal_file_open(HalFile *file, const char *path)
     if (handle == NULL) {
         return false;
     }
+    setvbuf(handle, NULL, _IONBF, 0);
     long size = file_size(handle);
     if (size < 0 || (unsigned long)size > UINT32_MAX) {
         fclose(handle);

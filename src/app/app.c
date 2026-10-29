@@ -26,6 +26,7 @@
 #include "library_rescan.h"
 #include "library_store.h"
 #include "music_check.h"
+#include "pet.h"
 #include "player.h"
 #include "settings_store.h"
 #include "ui/fade.h"
@@ -183,6 +184,9 @@ static void save_session(void)
 {
     player_save(&app.player);
     save_settings();
+    if (app.screens.pet.pet.dirty) {
+        pet_save(&app.screens.pet.pet);
+    }
 }
 
 static void finish_shut_down(void)
@@ -197,6 +201,7 @@ static void shut_down(const char *text)
 {
     app.goodbye_text = text;
     save_session();
+    pet_save(&app.screens.pet.pet);
     if (!app.display_on) {
         finish_shut_down();
         return;
@@ -575,6 +580,7 @@ static void start_screens(uint32_t now_ms)
         .rescan_requested = &app.rescan_requested,
     };
     Screen *root = app_screens_init(&app.screens, context);
+    pet_load(&app.screens.pet.pet);
     screen_stack_init(&app.stack, root, now_ms);
     open_start_screen(now_ms);
     use_screen_key_behaviors();
@@ -728,6 +734,8 @@ void app_step(void)
         player_update(&app.player, now_ms);
         explain_refusals(now_ms);
         update_power(now_ms);
+        pet_update(&app.screens.pet.pet, player_status(&app.player), now_ms);
+        pet_save_periodically(&app.screens.pet.pet, now_ms);
     }
     if (app.powered_off) {
         return;
@@ -803,4 +811,9 @@ const char *app_diagnostics_value(int index)
 {
     const MenuItem *item = &app.screens.diagnostics_items[index];
     return item->value != NULL ? item->value(item->context) : NULL;
+}
+
+const Pet *app_pet(void)
+{
+    return &app.screens.pet.pet;
 }

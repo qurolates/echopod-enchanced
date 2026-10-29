@@ -358,7 +358,7 @@ static bool folder_cover(CoverState *state, const CoverJob *job, const LibraryAl
     state->folder_count = 0;
     for (uint32_t track = 0; track < album->track_count; track++) {
         LibraryTrack info;
-        if (!read_track_path(state, album->first_track + track, &info) ||
+        if (!library_read_track(&state->library, album->first_track + track, &info) ||
             folder_tried(state, info.folder)) {
             continue;
         }
@@ -367,8 +367,16 @@ static bool folder_cover(CoverState *state, const CoverJob *job, const LibraryAl
             if (state->folder_matches[info.folder].name[0] == '\0') {
                 continue;
             }
+            if (!read_track_path(state, album->first_track + track, &info)) {
+                continue;
+            }
             copy_name(match, state->folder_matches[info.folder].name);
+            uint32_t length = folder_length(state->path);
+            state->path[length > 0 ? length : 1] = '\0';
             return append_name(state, match) && decode_file(state, job);
+        }
+        if (!read_track_path(state, album->first_track + track, &info)) {
+            continue;
         }
         const char *name = best_match(state, job);
         if (state->folder_matches != NULL && info.folder < state->folder_match_count) {
@@ -393,8 +401,8 @@ static bool album_cover(CoverState *state, const CoverJob *job, const LibraryAlb
     if (album->track_count == 0) {
         return false;
     }
-    if (embedded_cover(state, job, album->first_track, &decoded)) {
-        return decoded;
+    if (embedded_cover(state, job, album->first_track, &decoded) && decoded) {
+        return true;
     }
     return folder_cover(state, job, album);
 }
@@ -481,7 +489,12 @@ static bool copy_existing_cover(CoverState *state, const CoverJob *job, uint32_t
     if (offset + COVER_BUILD_RECORD_BYTES > job->capacity) {
         return false;
     }
-    uint32_t chunk_size = 4096;
+    uint32_t chunk_size = state->decode_size >= COVER_BUILD_RECORD_BYTES
+                              ? COVER_BUILD_RECORD_BYTES
+                              : (state->decode_size >= 4096 ? 4096 : state->decode_size);
+    if (chunk_size == 0) {
+        return false;
+    }
     uint32_t copied = 0;
     while (copied < COVER_BUILD_RECORD_BYTES) {
         uint32_t count = COVER_BUILD_RECORD_BYTES - copied < chunk_size
@@ -524,25 +537,15 @@ static bool can_keep_existing_covers(CoverState *state, const CoverJob *job, uin
             return false;
         }
         CachedPicture picture;
-        bool has_pic =
-            state->has_cache &&
-            track_cache_find_picture(&state->cache_reader, state->path + 1, &picture) &&
-            (picture.kind == TAG_PICTURE_RAW || picture.kind == TAG_PICTURE_BASE64_FLAC_BLOCK) &&
-            picture.length >= 16;
-        if (has_pic) {
-            uint8_t flags = 0;
-            if (!track_cache_find_flags(&state->cache_reader, state->path + 1, &flags) ||
-                !(flags & TRACK_FLAG_CACHE_HIT)) {
-                return false;
-            }
-            if (!in_existing) {
-                return false;
-            }
+        uint8_t flags = 0;
+        bool found = state->has_cache &&
+                     track_cache_find_picture_and_flags(&state->cache_reader, state->path + 1,
+                                                        &picture, &flags);
+        if (!found || !(flags & TRACK_FLAG_CACHE_HIT)) {
+            return false;
+        }
+        if (in_existing) {
             covers_matched++;
-        } else {
-            if (in_existing) {
-                return false;
-            }
         }
     }
     return covers_matched == state->existing_covers.count;
@@ -568,14 +571,13 @@ static ScanResult build_albums(CoverState *state, const CoverJob *job, CoverStat
             if (read_track_path(state, album.first_track, &track) && state->has_cache) {
                 CachedPicture picture;
                 uint8_t flags = 0;
-                if (track_cache_find_picture(&state->cache_reader, state->path + 1, &picture) &&
-                    (picture.kind == TAG_PICTURE_RAW || picture.kind == TAG_PICTURE_BASE64_FLAC_BLOCK) &&
-                    picture.length >= 16 &&
-                    track_cache_find_flags(&state->cache_reader, state->path + 1, &flags) &&
+                if (track_cache_find_picture_and_flags(&state->cache_reader, state->path + 1,
+                                                       &picture, &flags) &&
                     (flags & TRACK_FLAG_CACHE_HIT)) {
                     if (!copy_existing_cover(state, job, key, old_record)) {
                         return SCAN_WRITE_FAILED;
                     }
+                    report(job, album_index + 1, stats->albums);
                     continue;
                 }
             }
@@ -585,6 +587,7 @@ static ScanResult build_albums(CoverState *state, const CoverJob *job, CoverStat
         } else if (!store_cover(state, job, key)) {
             return SCAN_WRITE_FAILED;
         }
+        report(job, album_index + 1, stats->albums);
     }
     report(job, stats->albums, stats->albums);
     return SCAN_OK;
