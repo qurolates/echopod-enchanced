@@ -491,7 +491,7 @@ static void save_and_load_roundtrip(void)
     Pet pet;
     pet_init(&pet);
     pet.model.stage = PET_STAGE_CHILD;
-    pet.model.listening_time_ms = 12345678u;
+    pet.model.listening_time_ms = 1500000u;
     pet.model.affection = 75;
     pet.model.interaction_count = 89;
 
@@ -502,7 +502,7 @@ static void save_and_load_roundtrip(void)
     CHECK(pet_load(&loaded));
 
     CHECK_EQUAL(PET_STAGE_CHILD, loaded.model.stage);
-    CHECK_EQUAL(12345678u, loaded.model.listening_time_ms);
+    CHECK_EQUAL(1500000u, loaded.model.listening_time_ms);
     CHECK_EQUAL(75, loaded.model.affection);
     CHECK_EQUAL(89, loaded.model.interaction_count);
 }
@@ -670,7 +670,7 @@ static void pet_save_auto_reserves_if_file_missing(void)
     fake_hal_reset();
     Pet pet;
     pet_init(&pet);
-    pet.model.listening_time_ms = 2500000;
+    pet.model.listening_time_ms = 400000;
     pet.model.stage = PET_STAGE_BABY;
     pet.dirty = true;
 
@@ -680,7 +680,7 @@ static void pet_save_auto_reserves_if_file_missing(void)
     Pet loaded;
     pet_init(&loaded);
     CHECK(pet_load(&loaded));
-    CHECK_EQUAL(2500000, loaded.model.listening_time_ms);
+    CHECK_EQUAL(400000, loaded.model.listening_time_ms);
     CHECK_EQUAL(PET_STAGE_BABY, loaded.model.stage);
 }
 
