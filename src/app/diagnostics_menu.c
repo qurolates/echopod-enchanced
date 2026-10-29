@@ -447,6 +447,8 @@ void diagnostics_menu_build(AppScreens *screens, AppOptions *options, const Them
         .label = "DSP state", .select = NULL, .context = NULL, .value = diagnostics_row_dsp_state};
     screens->diagnostics_items[39] = (MenuItem){
         .label = "DSP bypass", .select = toggle_dsp_bypass, .context = NULL, .value = diagnostics_row_dsp_bypass};
+    screens->diagnostics_items[40] = app_screens_open_item(
+        "EchoPet", pet_screen_init(&screens->pet, theme, screens->pet.player));
     app_screens_build_menu(&screens->diagnostics, "Diagnostics", screens->diagnostics_items,
                            DIAGNOSTICS_ITEM_COUNT, theme);
 }

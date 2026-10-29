@@ -65,6 +65,7 @@ enum {
     DIAGNOSTICS_CORE1_DECODE_INDEX = 13,
     DIAGNOSTICS_STALL_TEST_INDEX = 20,
     DIAGNOSTICS_POWER_TAPS_INDEX = 21,
+    DIAGNOSTICS_ECHOPET_INDEX = 40,
     FIFTEEN_MINUTES_MS = 15 * 60 * 1000,
     GOODBYE_MS = 1000,
     SPLASH_FADE_MS = 600,
@@ -1758,6 +1759,22 @@ static void menu_does_nothing_while_nothing_plays(void)
     CHECK(title_is("EchoPod"));
 }
 
+static void echopet_opens_from_diagnostics_and_returns_home(void)
+{
+    start_app();
+    move_down(HOME_DIAGNOSTICS_INDEX);
+    tap(KEY_PLAY);
+    CHECK(title_is("Diagnostics"));
+    move_down(DIAGNOSTICS_ECHOPET_INDEX);
+    tap(KEY_PLAY);
+    CHECK(title_is("EchoPet"));
+    tap(KEY_PLAY);
+    tap(KEY_BACK);
+    CHECK(title_is("Diagnostics"));
+    tap(KEY_BACK);
+    CHECK(title_is("EchoPod"));
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -1889,6 +1906,7 @@ int main(void)
         TEST_CASE(holding_play_in_cover_flow_toggles_a_favorite),
         TEST_CASE(stopping_the_app_saves_the_session),
         TEST_CASE(each_step_records_its_duration),
+        TEST_CASE(echopet_opens_from_diagnostics_and_returns_home),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }
