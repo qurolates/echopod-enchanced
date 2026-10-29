@@ -11,15 +11,18 @@ enum {
     SPRITE_SCALE = 3,
     SPRITE_WIDTH = 16,
     SPRITE_HEIGHT = 16,
-    CAT_Y = 26,
-    TITLE_Y = 76,
-    TIME_Y = 96,
-    BAR_Y = 114,
-    BAR_WIDTH = 160,
-    BAR_HEIGHT = 6,
-    DESC_Y = 126,
-    HINT_Y = 146,
-    LINE_HEIGHT = 18,
+    CAT_Y = 25,
+    SHADOW_Y = 74,
+    SHADOW_WIDTH = 48,
+    SHADOW_HEIGHT = 2,
+    TITLE_Y = 79,
+    TIME_Y = 98,
+    BAR_Y = 116,
+    BAR_WIDTH = 180,
+    BAR_HEIGHT = 7,
+    DESC_Y = 130,
+    HINT_Y = 148,
+    LINE_HEIGHT = 16,
     TEXT_BUFFER_CAPACITY = 64
 };
 
@@ -67,10 +70,14 @@ static void draw_egg(Canvas *canvas, int x, int y, PetState state, Color fur, Co
     draw_span(canvas, x, y, 5, 6, 10, white);
 
     draw_span(canvas, x, y, 7, 2, 8, pink);
+    draw_pixel(canvas, x, y, 2, 8, fur);
+    draw_pixel(canvas, x, y, 13, 8, fur);
 
     if (state == PET_STATE_IDLE) {
         draw_pixel(canvas, x, y, 5, 7, fur);
         draw_pixel(canvas, x, y, 10, 7, fur);
+        draw_pixel(canvas, x, y, 5, 6, white);
+        draw_pixel(canvas, x, y, 10, 6, white);
     } else if (state == PET_STATE_LISTENING) {
         draw_span(canvas, x, y, 5, 6, 3, blue);
         draw_span(canvas, x, y, 2, 2, 6, blue);
@@ -130,18 +137,34 @@ static void draw_baby(Canvas *canvas, int x, int y, PetState state, Color fur, C
     draw_span(canvas, x, y, 4, 8, 10, fur);
     draw_span(canvas, x, y, 4, 8, 11, fur);
     draw_span(canvas, x, y, 4, 8, 12, fur);
+
+    draw_span(canvas, x, y, 5, 6, 9, white);
+    draw_span(canvas, x, y, 5, 6, 10, white);
+    draw_span(canvas, x, y, 6, 4, 11, white);
+
     draw_span(canvas, x, y, 3, 3, 13, fur);
     draw_span(canvas, x, y, 10, 3, 13, fur);
-    draw_span(canvas, x, y, 3, 2, 14, fur);
-    draw_span(canvas, x, y, 11, 2, 14, fur);
+    draw_span(canvas, x, y, 3, 2, 14, white);
+    draw_span(canvas, x, y, 11, 2, 14, white);
+
+    draw_pixel(canvas, x, y, 13, 11, fur);
+    draw_span(canvas, x, y, 13, 2, 12, fur);
+    draw_pixel(canvas, x, y, 14, 13, fur);
 
     draw_span(canvas, x, y, 7, 2, 7, pink);
+
+    draw_pixel(canvas, x, y, 0, 6, fur);
+    draw_pixel(canvas, x, y, 1, 6, fur);
+    draw_pixel(canvas, x, y, 14, 6, fur);
+    draw_pixel(canvas, x, y, 15, 6, fur);
 
     if (state == PET_STATE_IDLE) {
         draw_span(canvas, x, y, 4, 2, 5, white);
         draw_pixel(canvas, x, y, 5, 5, fur);
+        draw_pixel(canvas, x, y, 4, 5, white);
         draw_span(canvas, x, y, 10, 2, 5, white);
         draw_pixel(canvas, x, y, 10, 5, fur);
+        draw_pixel(canvas, x, y, 11, 5, white);
     } else if (state == PET_STATE_LISTENING) {
         draw_span(canvas, x, y, 5, 6, 2, blue);
         draw_span(canvas, x, y, 1, 2, 4, blue);
@@ -200,19 +223,34 @@ static void draw_child(Canvas *canvas, int x, int y, PetState state, Color fur, 
     draw_span(canvas, x, y, 1, 14, 6, fur);
     draw_span(canvas, x, y, 2, 12, 7, fur);
 
+    draw_pixel(canvas, x, y, 7, 2, white);
+    draw_pixel(canvas, x, y, 8, 2, white);
+    draw_pixel(canvas, x, y, 6, 3, white);
+    draw_pixel(canvas, x, y, 9, 3, white);
+
     draw_span(canvas, x, y, 3, 10, 8, fur);
     draw_span(canvas, x, y, 2, 12, 9, fur);
     draw_span(canvas, x, y, 2, 12, 10, fur);
     draw_span(canvas, x, y, 2, 12, 11, fur);
     draw_span(canvas, x, y, 2, 12, 12, fur);
 
+    draw_span(canvas, x, y, 5, 6, 8, white);
+    draw_span(canvas, x, y, 5, 6, 9, white);
+    draw_span(canvas, x, y, 6, 4, 10, white);
+    draw_span(canvas, x, y, 6, 4, 11, white);
+
     draw_span(canvas, x, y, 2, 3, 13, fur);
     draw_span(canvas, x, y, 6, 4, 13, fur);
     draw_span(canvas, x, y, 11, 3, 13, fur);
 
-    draw_span(canvas, x, y, 2, 2, 14, fur);
+    draw_span(canvas, x, y, 2, 2, 14, white);
     draw_span(canvas, x, y, 6, 4, 14, fur);
-    draw_span(canvas, x, y, 12, 2, 14, fur);
+    draw_span(canvas, x, y, 12, 2, 14, white);
+
+    draw_pixel(canvas, x, y, 14, 9, fur);
+    draw_span(canvas, x, y, 14, 2, 10, fur);
+    draw_span(canvas, x, y, 13, 2, 11, fur);
+    draw_pixel(canvas, x, y, 14, 8, white);
 
     draw_span(canvas, x, y, 7, 2, 6, pink);
 
@@ -292,23 +330,33 @@ static void draw_adult(Canvas *canvas, int x, int y, PetState state, Color fur, 
     draw_span(canvas, x, y, 7, 2, 9, red);
 
     draw_span(canvas, x, y, 2, 12, 9, fur);
-    draw_span(canvas, x, y, 7, 2, 9, red);
     draw_span(canvas, x, y, 2, 12, 10, fur);
     draw_span(canvas, x, y, 1, 14, 11, fur);
     draw_span(canvas, x, y, 1, 14, 12, fur);
+
+    draw_span(canvas, x, y, 5, 6, 10, white);
+    draw_span(canvas, x, y, 6, 4, 11, white);
+    draw_span(canvas, x, y, 6, 4, 12, white);
 
     draw_span(canvas, x, y, 1, 4, 13, fur);
     draw_span(canvas, x, y, 6, 4, 13, fur);
     draw_span(canvas, x, y, 11, 4, 13, fur);
 
-    draw_span(canvas, x, y, 1, 3, 14, fur);
+    draw_span(canvas, x, y, 1, 3, 14, white);
     draw_span(canvas, x, y, 6, 4, 14, fur);
-    draw_span(canvas, x, y, 12, 3, 14, fur);
+    draw_span(canvas, x, y, 12, 3, 14, white);
+
+    draw_pixel(canvas, x, y, 15, 8, fur);
+    draw_span(canvas, x, y, 14, 2, 9, fur);
+    draw_span(canvas, x, y, 13, 2, 10, fur);
+    draw_pixel(canvas, x, y, 15, 7, white);
 
     draw_span(canvas, x, y, 7, 2, 6, pink);
 
     draw_span(canvas, x, y, 0, 2, 6, white);
     draw_span(canvas, x, y, 14, 2, 6, white);
+    draw_pixel(canvas, x, y, 0, 7, white);
+    draw_pixel(canvas, x, y, 15, 7, white);
 
     if (state == PET_STATE_IDLE) {
         draw_span(canvas, x, y, 4, 3, 5, white);
@@ -366,6 +414,11 @@ static void draw_cat(Canvas *canvas, const Theme *theme, PetStage stage, PetStat
     Color white = theme->colors.background;
     Color blue = theme->colors.selection_background;
     Color red = COLOR_RGB(235, 60, 75);
+
+    canvas_fill_rect(canvas,
+                     (Rect){(HAL_DISPLAY_WIDTH - SHADOW_WIDTH) / 2, SHADOW_Y, SHADOW_WIDTH,
+                            SHADOW_HEIGHT},
+                     theme->colors.divider);
 
     switch (stage) {
     case PET_STAGE_EGG:
@@ -483,11 +536,16 @@ static void draw(void *context, Canvas *canvas)
                            .text = max_text});
     } else {
         int bar_x = (HAL_DISPLAY_WIDTH - BAR_WIDTH) / 2;
-        canvas_fill_rect(canvas, (Rect){bar_x, BAR_Y, BAR_WIDTH, BAR_HEIGHT}, theme->colors.divider);
+        canvas_fill_rect(canvas, (Rect){bar_x - 1, BAR_Y - 1, BAR_WIDTH + 2, BAR_HEIGHT + 2},
+                         theme->colors.divider);
+        canvas_fill_rect(canvas, (Rect){bar_x, BAR_Y, BAR_WIDTH, BAR_HEIGHT},
+                         theme->colors.background);
         int filled = (BAR_WIDTH * percent) / 100;
         if (filled > 0) {
             canvas_fill_rect(canvas, (Rect){bar_x, BAR_Y, filled, BAR_HEIGHT},
                              theme->colors.selection_background);
+            canvas_fill_rect(canvas, (Rect){bar_x, BAR_Y, filled, 1},
+                             theme->colors.selection_shine);
         }
     }
 

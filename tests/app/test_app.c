@@ -1759,6 +1759,26 @@ static void menu_does_nothing_while_nothing_plays(void)
     CHECK(title_is("EchoPod"));
 }
 
+static void echopet_progress_survives_a_restart(void)
+{
+    start_app_with_library();
+    play_first_album_track();
+    for (int i = 1; i <= 35; i++) {
+        now_ms += 1000;
+        fake_hal_audio_set_position((uint32_t)(i * 1000));
+        step();
+    }
+    app_stop();
+    uint32_t saved_time = app_pet()->model.listening_time_ms;
+    CHECK(saved_time > 0);
+
+    restart_app();
+    CHECK_EQUAL(saved_time, app_pet()->model.listening_time_ms);
+
+    step();
+    CHECK_EQUAL(saved_time, app_pet()->model.listening_time_ms);
+}
+
 static void echopet_opens_from_home_menu_and_returns_home(void)
 {
     start_app();
@@ -1919,6 +1939,7 @@ int main(void)
         TEST_CASE(each_step_records_its_duration),
         TEST_CASE(echopet_opens_from_diagnostics_and_returns_home),
         TEST_CASE(echopet_opens_from_home_menu_and_returns_home),
+        TEST_CASE(echopet_progress_survives_a_restart),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

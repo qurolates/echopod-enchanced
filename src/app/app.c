@@ -184,6 +184,9 @@ static void save_session(void)
 {
     player_save(&app.player);
     save_settings();
+    if (app.screens.pet.pet.dirty) {
+        pet_save(&app.screens.pet.pet);
+    }
 }
 
 static void finish_shut_down(void)
@@ -808,4 +811,9 @@ const char *app_diagnostics_value(int index)
 {
     const MenuItem *item = &app.screens.diagnostics_items[index];
     return item->value != NULL ? item->value(item->context) : NULL;
+}
+
+const Pet *app_pet(void)
+{
+    return &app.screens.pet.pet;
 }

@@ -620,6 +620,105 @@ static void audio_critical_path_isolated(void)
     CHECK_EQUAL(copy.volume, status.volume);
 }
 
+static void pet_survives_restart_and_continues_accumulating_experience(void)
+{
+    fake_hal_reset();
+    Pet pet;
+    pet_init(&pet);
+
+    PlayerStatus playing = {
+        .state = PLAYER_PLAYING,
+        .has_track = true,
+        .track = 1,
+        .position_ms = 0,
+    };
+    pet_update(&pet, playing, 1000);
+
+    for (int i = 1; i <= 5; i++) {
+        playing.position_ms = (uint32_t)(i * 1000);
+        pet_update(&pet, playing, (uint32_t)(1000 + i * 1000));
+    }
+    CHECK_EQUAL(5000, pet.model.listening_time_ms);
+    CHECK(pet.dirty);
+
+    CHECK(pet_save(&pet));
+    CHECK(!pet.dirty);
+
+    pet_init(&pet);
+    CHECK_EQUAL(0, pet.model.listening_time_ms);
+
+    Pet reloaded;
+    pet_init(&reloaded);
+    CHECK(pet_load(&reloaded));
+    CHECK_EQUAL(5000, reloaded.model.listening_time_ms);
+    CHECK_EQUAL(PET_STAGE_EGG, reloaded.model.stage);
+    CHECK(!reloaded.was_playing);
+
+    playing.position_ms = 5000;
+    pet_update(&reloaded, playing, 10000);
+    CHECK_EQUAL(5000, reloaded.model.listening_time_ms);
+
+    for (int i = 1; i <= 3; i++) {
+        playing.position_ms = (uint32_t)(5000 + i * 1000);
+        pet_update(&reloaded, playing, (uint32_t)(10000 + i * 1000));
+    }
+    CHECK_EQUAL(8000, reloaded.model.listening_time_ms);
+}
+
+static void pet_save_auto_reserves_if_file_missing(void)
+{
+    fake_hal_reset();
+    Pet pet;
+    pet_init(&pet);
+    pet.model.listening_time_ms = 2500000;
+    pet.model.stage = PET_STAGE_BABY;
+    pet.dirty = true;
+
+    CHECK(pet_save(&pet));
+    CHECK(!pet.dirty);
+
+    Pet loaded;
+    pet_init(&loaded);
+    CHECK(pet_load(&loaded));
+    CHECK_EQUAL(2500000, loaded.model.listening_time_ms);
+    CHECK_EQUAL(PET_STAGE_BABY, loaded.model.stage);
+}
+
+static void pet_periodic_save_skips_write_when_not_dirty(void)
+{
+    fake_hal_reset();
+    Pet pet;
+    pet_init(&pet);
+    pet.dirty = false;
+
+    int writes_before = fake_hal_write_count();
+    CHECK(!pet_save_periodically(&pet, 40000));
+    CHECK_EQUAL(writes_before, fake_hal_write_count());
+
+    pet.dirty = true;
+    CHECK(pet_save_periodically(&pet, 40000));
+    CHECK_EQUAL(writes_before + 1, fake_hal_write_count());
+}
+
+static void pet_load_rejects_incompatible_version(void)
+{
+    fake_hal_reset();
+    PetModel model = {
+        .version = 99,
+        .stage = PET_STAGE_BABY,
+        .listening_time_ms = 500000,
+    };
+    uint8_t bytes[PET_STATE_SIZE];
+    pet_model_encode(&model, bytes);
+    hal_file_write(PET_STORE_PATH, bytes, sizeof bytes);
+
+    Pet pet;
+    pet_init(&pet);
+    CHECK(!pet_load(&pet));
+    CHECK_EQUAL(PET_STAGE_EGG, pet.model.stage);
+    CHECK_EQUAL(0, pet.model.listening_time_ms);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -647,6 +746,10 @@ int main(void)
         TEST_CASE(progress_percent_and_formatting),
         TEST_CASE(model_encode_decode_roundtrip),
         TEST_CASE(audio_critical_path_isolated),
+        TEST_CASE(pet_survives_restart_and_continues_accumulating_experience),
+        TEST_CASE(pet_save_auto_reserves_if_file_missing),
+        TEST_CASE(pet_periodic_save_skips_write_when_not_dirty),
+        TEST_CASE(pet_load_rejects_incompatible_version),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

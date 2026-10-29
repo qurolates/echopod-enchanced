@@ -106,7 +106,13 @@ bool pet_model_save(const PetModel *model)
 {
     uint8_t bytes[PET_STATE_SIZE];
     pet_model_encode(model, bytes);
-    return hal_file_write(PET_STORE_PATH, bytes, sizeof bytes);
+    if (!hal_file_write(PET_STORE_PATH, bytes, sizeof bytes)) {
+        if (hal_file_reserve(PET_STORE_PATH, 4096) != HAL_RESERVE_FAILED) {
+            return hal_file_write(PET_STORE_PATH, bytes, sizeof bytes);
+        }
+        return false;
+    }
+    return true;
 }
 
 bool pet_model_load(PetModel *model)
@@ -292,6 +298,11 @@ bool pet_load(Pet *pet)
     }
     pet->model = loaded;
     pet->dirty = false;
+    pet->was_playing = false;
+    pet->last_playing_ms = 0;
+    pet->last_position_ms = 0;
+    pet->last_track = 0;
+    pet->reaction_until_ms = 0;
     return true;
 }
 
