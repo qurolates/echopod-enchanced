@@ -9,6 +9,18 @@ This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a
 
 ---
 
+## Screenshots
+
+| Now Playing | EchoPet Companion |
+| :---: | :---: |
+| ![Now Playing](assets/screenshots/now_playing.png) | ![EchoPet](assets/screenshots/echopet.png) |
+| **5-Band Equalizer** | **Power Saving Mode** |
+| ![Equalizer](assets/screenshots/equalizer.png) | ![Power Saving](assets/screenshots/power_saving.png) |
+| **Classic Home Menu** | **Cover Flow** |
+| ![Home Menu](assets/screenshots/home_menu.png) | ![Cover Flow](assets/screenshots/cover_flow.png) |
+
+---
+
 ## What's New in EchoPod Enhanced
 
 ### 1. AAC-LC Audio Playback (`.m4a`)
