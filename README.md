@@ -2,7 +2,7 @@
 
 **EchoPod Enhanced** is a feature-extended fork of [EchoPod](https://github.com/BasilSkyWalk/echopod), the replacement firmware for the Snowsky (FiiO) Echo Mini portable music player (dual Cortex-M3 Rockchip RKnanoC).
 
-This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a **5-band equalizer with user presets**, **ReplayGain with anti-clipping**, full **Cyrillic and expanded CJK Unicode font coverage**, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
+This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a **5-band equalizer with user presets**, **ReplayGain with anti-clipping**, a comprehensive **Power Saving Mode** with automatic low-battery hysteresis, full **Cyrillic and expanded CJK Unicode font coverage**, improved **power-on button handling**, and optimized Core 0 / Core 1 memory layouts while preserving rock-solid stability and zero-heap Core 1 architecture.
 
 > [!NOTE]
 > EchoPod Enhanced is community-developed open-source software and is not affiliated with or endorsed by FiiO / Snowsky.
@@ -36,18 +36,27 @@ This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a
 - **Smooth Cross-Track Transitions:** Slewed gain adjustment between consecutive tracks to prevent audible clicks.
 - **Multi-Format Tag Probing:** Extracts ReplayGain fields from ID3v2 (MP3/WAV), Vorbis Comments (FLAC/Opus), and MP4 custom atoms (AAC).
 
-### 5. Power Button Boot Logic
+### 5. Comprehensive Power Saving Mode
+- **Three Operation Profiles:**
+  - **Off:** Default firmware behavior; uses full user-configured timeouts and standard performance.
+  - **Balanced:** Everyday energy conservation profile. Applies an effective screen backlight timeout of $\min(\text{user}, 15\text{ s})$, throttles UI rendering to 30 FPS (10 FPS when static), slows marquee animation to 12 px/s, and extends periodic SD-card state saves to 60 s (75% write reduction).
+  - **Maximum:** Maximum battery preservation. Shortens screen timeout to $\min(\text{user}, 10\text{ s})$, disables slide transitions and marquee animations for static text rendering, limits UI frame pacing to 15 FPS (4 FPS when static), and reduces SD-card state saves to 120 s (>85% write reduction).
+- **Automatic Low-Battery Protection:** Configurable auto-switch threshold (Off, 10%, 20%) that transitions to Balanced mode when battery drops below the set limit, featuring a +5% hysteresis recovery band to prevent toggle chatter and automatic reset upon charger/USB connection.
+- **Audio Path & Codec Protection:** Retains the 200 MHz CPU operating frequency during audio playback across all codecs (AAC, Opus, FLAC, MP3), ensuring zero audio underruns or buffer starvation, while enabling 96 MHz deep standby when idle with screen dark.
+- **Instant Mode Switching & Restoration:** Seamless on-the-fly mode transitions during active playback without interruption; user's base screen timeout is safely remembered and restored when power saving is turned off.
+
+### 6. Power Button Boot Logic
 - **Hold-to-Boot Detection:** Implements a state-machine debounce and hold check (`BOOT_POWER_HOLD_MS`) on boot. Prevents false power-ons from brief accidental presses in a pocket or bag.
 
-### 6. Multilingual Unicode Typography
+### 7. Multilingual Unicode Typography
 - **Cyrillic & Extended CJK Support:** Complete Cyrillic alphabet (Russian, Belarusian, Ukrainian) and expanded Chinese, Japanese, and Korean glyphs integrated into the compressed bitmap font system.
 - **Case Folding & Sorting:** Fold table updated for proper Unicode case folding, searching, and alphabetical sorting in the music library.
 
-### 7. Memory & Performance Measurements
+### 8. Memory & Performance Measurements
 - **Core 0 CODE_RAM:** 146,988 bytes used out of 157,292 limit (**+10.3 KB headroom** in Release build).
 - **Core 1 AAC Overlay:** 50,540 bytes code (**+77 KB headroom**).
 - **Core 1 Opus Overlay:** 73,160 bytes code, 27.7 KB BSS (**+57 KB code headroom**, **+13 KB BSS headroom**).
-- **Test Suite:** 100% passed (130 / 130 CTest units).
+- **Test Suite:** 100% passed (133 / 133 CTest units, including `test_power_save`, `test_power_saving`, and target checks).
 
 ---
 
@@ -160,6 +169,27 @@ mkdir -p build/system
 
 ---
 
+## Settings Menu Structure
+
+EchoPod Enhanced provides a clean, streamlined settings menu:
+
+1. **Rescan library** — Rescans the microSD card and updates `/.echo/library.db` and cover cache.
+2. **Shuffle** — Off, Songs, Albums.
+3. **Sleep timer** — Off, 15 min, 30 min, 45 min, 60 min, 90 min, 120 min.
+4. **Repeat** — Off, Repeat All, Repeat One.
+5. **Gain** — Low, High headphone amplifier gain.
+6. **Equalizer** — On/Off toggle, built-in presets (Rock, Pop, etc.), custom preset manager, and interactive 5-band editor.
+7. **ReplayGain** — Off, Track, Album loudness normalization.
+8. **Output** — Single-ended 3.5mm, Balanced 4.4mm output routing.
+9. **Power saving** — Off, Balanced, Maximum power-saving profiles.
+10. **Auto power save** — Off, 10%, 20% low-battery auto-switch threshold with hysteresis.
+11. **Auto off** — Off, 1 min, 2 min, 5 min, 10 min idle auto-shutdown.
+12. **Screen timeout** — 5 s, 10 s, 15 s, 30 s, 1 min, 2 min, 5 min, 10 min, Always On.
+13. **Brightness** — 10-level backlight brightness adjustment.
+14. **Start screen** — Main menu, Now Playing, Artists, Albums, Songs, EchoPet.
+
+---
+
 ## Navigation & Controls
 
 | Button | In Menus & Lists | On Now Playing | During Seek Mode |
@@ -175,7 +205,7 @@ mkdir -p build/system
 
 - **EchoPod Enhanced Fork:**
   - **[@qurolates](https://github.com/qurolates)** — Creator and maintainer.
-  - **Antigravity by Google DeepMind** — AI pair programmer (AAC-LC and Ogg Opus dual-core codecs, multilingual Unicode fonts, boot power logic, 5-band EQ, and ReplayGain engine).
+  - **Antigravity by Google DeepMind** — AI pair programmer (AAC-LC and Ogg Opus dual-core codecs, multilingual Unicode fonts, boot power logic, 5-band EQ, ReplayGain engine, and Power Saving Mode).
 - **EchoPod Core & UI:** GPL-3.0-or-later. Original project created by [Basil Joy](https://github.com/BasilSkyWalk/echopod).
 - **Reverse Engineering & Hardware Research:** Built upon findings from the [ReChord](https://github.com/brnomt/ReChord) project (`docs/hardware.md`, `CREDITS.md`).
 - **libopus:** BSD-3-Clause (Xiph.Org Foundation, Skype Technologies SA).
