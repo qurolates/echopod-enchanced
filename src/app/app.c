@@ -9,6 +9,7 @@
 #include "core/key_tracker.h"
 #include "core/low_battery.h"
 #include "core/power_policy.h"
+#include "core/power_save.h"
 #include "core/string_builder.h"
 #include "cover_cache.h"
 #include "default_theme.h"
@@ -82,6 +83,9 @@ typedef struct AppState {
     FavoritesStore favorites;
     CoverCache covers;
     PowerPolicy power;
+    PowerSaveManager power_save;
+    Theme theme;
+    uint32_t last_render_ms;
     LowBattery low_battery;
     uint32_t battery_check_ms;
     bool usb_power;
@@ -248,6 +252,10 @@ static void start_slide(Screen *leaving, int depth_before, uint32_t now_ms)
     if (top_screen() == leaving) {
         return;
     }
+    if (!power_save_animations_enabled(&app.power_save)) {
+        app.slide.active = false;
+        return;
+    }
     bool deeper = screen_stack_depth(&app.stack) > depth_before;
     app.leaving = leaving;
     slide_start(&app.slide, now_ms, deeper ? SLIDE_FORWARD : SLIDE_BACK);
@@ -317,10 +325,12 @@ static bool ignored_power_tap(KeyEvent event)
            event.gesture == KEY_GESTURE_PRESS;
 }
 
-static void dispatch_key_events(uint32_t now_ms)
+static bool dispatch_key_events(uint32_t now_ms)
 {
+    bool any_key = false;
     KeyEvent event;
     while (!app.powered_off && key_tracker_next_event(&app.keys, &event)) {
+        any_key = true;
         if (ignored_power_tap(event)) {
             continue;
         }
@@ -333,6 +343,22 @@ static void dispatch_key_events(uint32_t now_ms)
             dispatch_to_screen(event, now_ms);
         }
     }
+    return any_key;
+}
+
+static void apply_power_save(void)
+{
+    power_policy_set_timeout(&app.power, power_save_effective_timeout(&app.power_save));
+    player_set_save_interval(&app.player, power_save_player_save_interval_ms(&app.power_save));
+    pet_set_save_interval(&app.screens.pet.pet, power_save_pet_save_interval_ms(&app.power_save));
+    if (!power_save_marquee_enabled(&app.power_save)) {
+        app.theme.marquee.speed_px_per_s = 0;
+    } else if (power_save_active_mode(&app.power_save) == POWER_SAVE_BALANCED) {
+        app.theme.marquee.speed_px_per_s = 20;
+        app.theme.marquee.pause_ms = 3000;
+    } else {
+        app.theme.marquee = DEFAULT_THEME.marquee;
+    }
 }
 
 static bool battery_empty(uint32_t now_ms)
@@ -343,6 +369,16 @@ static bool battery_empty(uint32_t now_ms)
     app.battery_check_ms = now_ms + BATTERY_CHECK_MS;
     HalBattery battery = hal_power_battery();
     app.usb_power = battery.usb_power;
+    if (power_save_update_battery(&app.power_save, battery.known, battery.percent,
+                                  battery.charging, battery.usb_power)) {
+        apply_power_save();
+        static char message[40];
+        StringBuilder builder = string_builder_make(message, sizeof message);
+        string_builder_append(&builder, "Power saving: ");
+        string_builder_append(&builder,
+                              power_save_mode_name(power_save_active_mode(&app.power_save)));
+        toast_show(&app.toast, message, now_ms);
+    }
     LowBatteryReading reading = {
         .known = battery.known, .millivolts = battery.millivolts, .usb_power = battery.usb_power};
     return low_battery_update(&app.low_battery, reading, now_ms);
@@ -419,7 +455,7 @@ static void draw_shifted(Screen *screen, Canvas *canvas, int x, Rect area)
 
 static void draw_slide(Canvas *canvas, Screen *arriving)
 {
-    const Theme *theme = &DEFAULT_THEME;
+    const Theme *theme = &app.theme;
     Screen *leaving = app.leaving;
     bool whole = arriving->full_screen || leaving->full_screen;
     Rect area =
@@ -446,9 +482,9 @@ static void draw_frame(void *context, Canvas *canvas)
         screen->draw(screen->context, canvas);
     }
     if (!screen->full_screen) {
-        status_bar_draw(canvas, &DEFAULT_THEME, state->status_bar);
+        status_bar_draw(canvas, &state->theme, state->status_bar);
     }
-    toast_draw(&state->toast, canvas, &DEFAULT_THEME);
+    toast_draw(&state->toast, canvas, &state->theme);
     if (state->options.show_frame_time) {
         FrameBreakdown breakdown = {
             .total_us = frame_stats_average_us(&state->frame_stats),
@@ -456,7 +492,7 @@ static void draw_frame(void *context, Canvas *canvas)
             .draw_us = frame_stats_average_us(&state->draw_stats),
             .send_us = frame_stats_average_us(&state->send_stats),
         };
-        frame_overlay_draw(canvas, &DEFAULT_THEME, breakdown, hal_audio_stats());
+        frame_overlay_draw(canvas, &state->theme, breakdown, hal_audio_stats());
     }
 }
 
@@ -530,6 +566,7 @@ static void render_frame(void)
     frame_stats_record(&app.send_stats, app.send_us);
     frame_stats_record(&app.draw_stats, render_us - app.send_us);
     draw_profile_finish_frame();
+    app.last_render_ms = app.now_ms;
 }
 
 static void draw_notice(void *context, Canvas *canvas)
@@ -550,7 +587,7 @@ static void start_playback(void)
 
 static void start_hardware(uint32_t now_ms)
 {
-    power_policy_init(&app.power, settings_screen_timeout_ms(&app.settings.settings), now_ms);
+    power_policy_init(&app.power, power_save_effective_timeout(&app.power_save), now_ms);
     power_policy_set_auto_off(&app.power, settings_auto_off_ms(&app.settings.settings), now_ms);
     settings_store_apply_hardware(&app.settings.settings);
     set_display(true);
@@ -569,12 +606,13 @@ static void start_screens(uint32_t now_ms)
 {
     AppScreensContext context = {
         .options = &app.options,
-        .theme = &DEFAULT_THEME,
+        .theme = &app.theme,
         .store = &app.library,
         .player = &app.player,
         .settings = &app.settings,
         .favorites = &app.favorites,
         .power = &app.power,
+        .power_save = &app.power_save,
         .toast = &app.toast,
         .covers = &app.covers,
         .rescan_requested = &app.rescan_requested,
@@ -616,9 +654,15 @@ void app_start(void)
     app.battery_check_ms = now_ms;
     app.splash = (Fade){.active = false};
     app.now_ms = now_ms;
+    app.theme = DEFAULT_THEME;
+    app.last_render_ms = now_ms;
     CardFilesReport files = card_files_prepare();
     settings_store_load(&app.settings);
+    power_save_init(&app.power_save, app.settings.settings.power_save_mode,
+                    app.settings.settings.auto_power_save,
+                    settings_screen_timeout_ms(&app.settings.settings));
     start_playback();
+    apply_power_save();
     start_hardware(now_ms);
     start_screens(now_ms);
     report_card_files(files, now_ms);
@@ -722,10 +766,11 @@ void app_step(void)
     hal_bluetooth_service();
     read_input();
     key_tracker_update(&app.keys, now_ms);
+    bool key_pressed = false;
     if (fade_running()) {
         drain_key_events();
     } else {
-        dispatch_key_events(now_ms);
+        key_pressed = dispatch_key_events(now_ms);
     }
     if (app.saying_goodbye && fade_finished(&app.goodbye, now_ms)) {
         finish_shut_down();
@@ -746,7 +791,11 @@ void app_step(void)
     toast_update(&app.toast, now_ms);
     update_screen(now_ms);
     frame_stats_record(&app.update_stats, hal_clock_microseconds() - started_us);
-    if (app.display_on) {
+    bool animating = fade_running() || slide_running();
+    uint32_t interval = power_save_frame_interval_ms(&app.power_save, animating);
+    bool render_due = key_pressed || app.light_after_frame || animating ||
+                      (now_ms - app.last_render_ms >= interval);
+    if (app.display_on && render_due) {
         render_frame();
         light_after_first_frame();
     }
@@ -816,4 +865,9 @@ const char *app_diagnostics_value(int index)
 const Pet *app_pet(void)
 {
     return &app.screens.pet.pet;
+}
+
+PowerSaveMode app_power_save_mode(void)
+{
+    return power_save_active_mode(&app.power_save);
 }

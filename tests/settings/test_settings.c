@@ -40,6 +40,8 @@ static Settings custom_settings(void)
     settings.eq_gains[3] = 2;
     settings.eq_gains[4] = 2;
     settings.replay_gain_mode = REPLAY_GAIN_TRACK;
+    settings.power_save_mode = POWER_SAVE_BALANCED;
+    settings.auto_power_save = AUTO_POWER_SAVE_20_PERCENT;
     return settings;
 }
 
@@ -67,6 +69,8 @@ static void defaults_are_comfortable(void)
     CHECK_EQUAL(0, settings.eq_preset);
     CHECK_EQUAL(0, settings.eq_user_preset_count);
     CHECK_EQUAL(REPLAY_GAIN_OFF, settings.replay_gain_mode);
+    CHECK_EQUAL(POWER_SAVE_OFF, settings.power_save_mode);
+    CHECK_EQUAL(AUTO_POWER_SAVE_OFF, settings.auto_power_save);
     for (int band = 0; band < EQ_BAND_COUNT; band++) {
         CHECK_EQUAL(0, settings.eq_gains[band]);
     }
@@ -151,6 +155,23 @@ static void a_version_four_file_decodes_and_defaults_replay_gain_to_off(void)
     CHECK_EQUAL(1, decoded.eq_user_preset_count);
     CHECK(strcmp("Bass Plus", decoded.eq_user_presets[0].name) == 0);
     CHECK_EQUAL(REPLAY_GAIN_OFF, decoded.replay_gain_mode);
+    CHECK_EQUAL(POWER_SAVE_OFF, decoded.power_save_mode);
+    CHECK_EQUAL(AUTO_POWER_SAVE_OFF, decoded.auto_power_save);
+}
+
+static void a_version_five_file_decodes_and_defaults_power_save_to_off(void)
+{
+    Settings settings = custom_settings();
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    bytes[VERSION_FIELD] = 5;
+    rewrite_checksum(bytes, CHECKSUM_FIELD);
+    Settings decoded;
+    CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+    CHECK_EQUAL(42, decoded.volume);
+    CHECK_EQUAL(REPLAY_GAIN_TRACK, decoded.replay_gain_mode);
+    CHECK_EQUAL(POWER_SAVE_OFF, decoded.power_save_mode);
+    CHECK_EQUAL(AUTO_POWER_SAVE_OFF, decoded.auto_power_save);
 }
 
 static void timeout_options_end_with_never(void)
@@ -198,6 +219,8 @@ static void settings_survive_a_round_trip(void)
         CHECK_EQUAL(original.eq_gains[band], decoded.eq_gains[band]);
     }
     CHECK_EQUAL(original.replay_gain_mode, decoded.replay_gain_mode);
+    CHECK_EQUAL(original.power_save_mode, decoded.power_save_mode);
+    CHECK_EQUAL(original.auto_power_save, decoded.auto_power_save);
 }
 
 static void a_corrupted_file_is_rejected(void)
@@ -275,6 +298,7 @@ int main(void)
         TEST_CASE(a_version_two_file_keeps_its_values_and_gets_default_eq),
         TEST_CASE(a_version_three_file_decodes_eq_settings),
         TEST_CASE(a_version_four_file_decodes_and_defaults_replay_gain_to_off),
+        TEST_CASE(a_version_five_file_decodes_and_defaults_power_save_to_off),
         TEST_CASE(user_preset_lifecycle_and_capacity),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));

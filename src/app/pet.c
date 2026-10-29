@@ -282,6 +282,7 @@ void pet_init(Pet *pet)
     pet->screen_active = false;
     pet->dirty = false;
     pet->last_save_ms = 0;
+    pet->save_interval_ms = PET_SAVE_INTERVAL_MS;
 }
 
 bool pet_load(Pet *pet)
@@ -320,11 +321,17 @@ bool pet_save_periodically(Pet *pet, uint32_t now_ms)
     if (!pet->dirty) {
         return false;
     }
-    if (now_ms - pet->last_save_ms < PET_SAVE_INTERVAL_MS) {
+    uint32_t interval = pet->save_interval_ms > 0 ? pet->save_interval_ms : PET_SAVE_INTERVAL_MS;
+    if (now_ms - pet->last_save_ms < interval) {
         return false;
     }
     pet->last_save_ms = now_ms;
     return pet_save(pet);
+}
+
+void pet_set_save_interval(Pet *pet, uint32_t interval_ms)
+{
+    pet->save_interval_ms = interval_ms;
 }
 
 void pet_update(Pet *pet, PlayerStatus status, uint32_t now_ms)

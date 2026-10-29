@@ -131,6 +131,7 @@ static void build_settings(AppScreens *screens, AppScreensContext context)
         .store = context.settings,
         .player = context.player,
         .power = context.power,
+        .power_save = context.power_save,
         .toast = context.toast,
         .rescan_requested = context.rescan_requested,
         .sleep_option = 0,

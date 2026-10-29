@@ -74,6 +74,7 @@ typedef struct Pet {
     bool screen_active;
     bool dirty;
     uint32_t last_save_ms;
+    uint32_t save_interval_ms;
 } Pet;
 
 extern const char PET_STORE_PATH[];
@@ -82,6 +83,7 @@ void pet_init(Pet *pet);
 bool pet_load(Pet *pet);
 bool pet_save(Pet *pet);
 bool pet_save_periodically(Pet *pet, uint32_t now_ms);
+void pet_set_save_interval(Pet *pet, uint32_t interval_ms);
 PetAudioEvent pet_handle_playback(Pet *pet, PlayerStatus status);
 void pet_update(Pet *pet, PlayerStatus status, uint32_t now_ms);
 void pet_interact(Pet *pet, uint32_t now_ms);
