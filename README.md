@@ -45,33 +45,20 @@ This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a
 - **Audio Path & Codec Protection:** Retains the 200 MHz CPU operating frequency during audio playback across all codecs (AAC, Opus, FLAC, MP3), ensuring zero audio underruns or buffer starvation, while enabling 96 MHz deep standby when idle with screen dark.
 - **Instant Mode Switching & Restoration:** Seamless on-the-fly mode transitions during active playback without interruption; user's base screen timeout is safely remembered and restored when power saving is turned off.
 
-### 6. EchoPet Virtual Pet Companion
-- **Tamagotchi-Inspired Gameplay:** A music-driven virtual pet integrated directly into firmware that lives and evolves on your EchoPod.
-- **Listening-Driven Growth:** Evolves through distinct life milestones (Egg $\to$ Baby Kitten $\to$ Curious Cat $\to$ Master Cat) based on your real music listening hours.
-- **Dedicated 60/40 Pixel-Art Screen:** Custom animated 96x96 pixel sprites, responsive animations (idle ear twitches, playful tail wags, sleep states), and progress indicators.
-- **Persistent State:** Automatically saves listening milestones and pet happiness to `/.echo/pet.bin`, surviving reboots with power-aware periodic flush intervals.
-- **Direct Home Menu Entry:** Seamlessly accessed as a first-class screen from the main menu.
-
-### 7. Accelerated Library Scanner & Full Cover Discovery
+### 6. Accelerated Library Scanner & Full Cover Discovery
 - **High-Speed Incremental Cache:** Tracks up to 8,192 audio files with block-based index traversal, drastically slashing cold and warm boot scanning times.
 - **Cover Reuse Engine:** Automatically detects unchanged albums and reuses cached artwork instead of re-decoding from flash, cutting rescan times.
 - **Full Embedded Artwork Extraction:** Native on-device front cover extraction across **all** supported formats: MP3 (ID3v2 APIC), FLAC (Picture block), M4A (MP4 `covr`), and Opus/Ogg (Base64 `METADATA_BLOCK_PICTURE` in Vorbis comments).
 - **Watchdog Protection:** Continuously feeds the hardware stall and watchdog timer during lengthy library builds to guarantee stability.
 
-### 8. Modern IBM Plex Typography & UI Enhancements
-- **IBM Plex Sans Fonts:** High-legibility typography in regular and semi-bold weights optimized specifically for the 2.4" display.
-- **Theme-Adaptive Cover Flow:** Cover Flow dynamically measures cover art luminosity and tints the background palette for optimal visual contrast.
-- **Classic Light Theme:** High-contrast retro aesthetic with crisp dark-on-light text rendering.
-- **Release Profile Streamlining:** Diagnostics menu excluded from release firmware builds for a clean, distraction-free consumer experience.
-
-### 9. Power Button Boot Logic
+### 7. Power Button Boot Logic
 - **Hold-to-Boot Detection:** Implements a state-machine debounce and hold check (`BOOT_POWER_HOLD_MS`) on boot. Prevents false power-ons from brief accidental presses in a pocket or bag.
 
-### 10. Multilingual Unicode Typography
+### 8. Multilingual Unicode Typography
 - **Cyrillic & Extended CJK Support:** Complete Cyrillic alphabet (Russian, Belarusian, Ukrainian) and expanded Chinese, Japanese, and Korean glyphs integrated into the compressed bitmap font system.
 - **Case Folding & Sorting:** Fold table updated for proper Unicode case folding, searching, and alphabetical sorting in the music library.
 
-### 11. Performance, Battery & Memory Measurements
+### 9. Performance, Battery & Memory Measurements
 - **Zero-Drift Display Pacing:** Main loop display refresh paced at 30 FPS with WFI sleep when lit to reduce processor heat.
 - **Automatic Audio Standby:** Core 1 and hardware DAC automatically power down after 3 seconds of pause/idle, allowing Core 0 to enter 96 MHz deep standby.
 - **Core 1 Busy-Wait Elimination:** Inter-core IPC without busy-spin polling loops.
@@ -80,6 +67,18 @@ This fork brings full **AAC-LC (`.m4a`)** and **Ogg Opus (`.opus`)** playback, a
 - **Core 1 AAC Overlay:** 50,540 bytes code (**+77 KB headroom**).
 - **Core 1 Opus Overlay:** 73,160 bytes code, 27.7 KB BSS (**+57 KB code headroom**, **+13 KB BSS headroom**).
 - **Test Suite:** 100% passed (133 / 133 CTest units, including `test_power_save`, `test_power_saving`, and target checks).
+
+---
+
+## EchoPet Virtual Companion
+
+EchoPet is an interactive, music-driven virtual companion integrated directly into the EchoPod firmware:
+
+- **Tamagotchi-Inspired Gameplay:** A virtual pet that lives and grows directly on your EchoPod as you listen to music.
+- **Listening-Driven Growth:** Evolves through distinct life milestones (Egg $\to$ Baby Kitten $\to$ Curious Cat $\to$ Master Cat) based on your real music listening hours.
+- **Dedicated 60/40 Pixel-Art Screen:** Custom animated 96x96 pixel sprites, responsive animations (idle ear twitches, playful tail wags, sleep states), and progress indicators.
+- **Persistent State:** Automatically saves listening milestones and pet happiness to `/.echo/pet.bin`, surviving reboots with power-aware periodic flush intervals.
+- **Direct Home Menu Entry:** Seamlessly accessed as a first-class screen from the main menu.
 
 ---
 
